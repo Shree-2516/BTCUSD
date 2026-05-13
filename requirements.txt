@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+pandas
+requests
+websockets
+python-dotenv
+aiohttp
+jinja2
+python-multipart
+sqlalchemy
+psycopg2-binary

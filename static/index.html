@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SHREE BTCUSD Dashboard</title>
+    <link rel="stylesheet" href="static/style.css">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Outfit:wght@400;600;800&display=swap"
+        rel="stylesheet">
+    <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <span class="logo-icon"></span>
+                <span class="logo-text">SHREE.TRADER</span>
+            </div>
+
+            <nav class="nav-menu">
+                <div class="nav-item active" id="nav-dashboard">Dashboard</div>
+                <div class="nav-item" id="nav-wallet">Wallet</div>
+                <div class="nav-item" id="nav-reports">Reports</div>
+            </nav>
+
+            <div class="wallet-mini">
+                <span class="label">Balance</span>
+                <div class="balance-row">
+                    <span id="wallet-balance">0.00</span>
+                    <span class="currency">USDT</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="top-header">
+                <div class="live-ticker">
+                    <span class="symbol">BTCUSD</span>
+                    <span id="ticker-price" class="price">Loading...</span>
+                    <span id="ticker-change" class="change">--%</span>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-secondary" id="btn-add-funds">Add Funds</button>
+                    <div class="status-indicator">
+                        <span class="status-dot" id="live-status-dot"></span>
+                        <span id="live-status-text">System Ready</span>
+                    </div>
+                </div>
+            </header>
+
+            <div class="dashboard-grid">
+                <!-- Left Column: Controls & Stats -->
+                <div class="col-controls">
+                    <section class="card glass">
+                        <h3>Strategy Configuration</h3>
+                        <div class="form-group">
+                            <label>Select Strategy</label>
+                            <select id="strategy-select">
+                                <option value="">Select a strategy...</option>
+                            </select>
+                        </div>
+
+                        <div class="tabs">
+                            <button class="tab-btn active" data-tab="backtest">Backtest</button>
+                            <button class="tab-btn" data-tab="livetest">Live Test</button>
+                            <button class="tab-btn" data-tab="manual">Manual</button>
+                        </div>
+
+                        <div class="tab-content" id="backtest-params">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Initial Capital</label>
+                                    <input type="number" id="bt-capital" value="10000">
+                                </div>
+                                <div class="form-group">
+                                    <label>Lot Size</label>
+                                    <input type="number" id="bt-lot" value="0.1" step="0.1">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Start Date</label>
+                                    <input type="date" id="bt-start" value="2024-01-01">
+                                </div>
+                                <div class="form-group">
+                                    <label>End Date</label>
+                                    <input type="date" id="bt-end" value="2024-05-01">
+                                </div>
+                            </div>
+                            <button class="btn btn-primary w-full" id="run-backtest">Run Backtest</button>
+                        </div>
+
+                        <div class="tab-content hidden" id="livetest-params">
+                            <div class="form-group">
+                                <label>Position Size</label>
+                                <input type="number" id="live-size" value="0.1" step="0.1">
+                            </div>
+                            <button class="btn btn-success w-full" id="start-live">Start Live Test</button>
+                            <button class="btn btn-danger w-full hidden" id="stop-live">Stop Live Test</button>
+
+                            <div class="live-animation hidden" id="live-pulse">
+                                <div class="pulse-ring"></div>
+                                <span>LIVE TESTING ACTIVE</span>
+                            </div>
+                        </div>
+
+                        <div class="tab-content hidden" id="manual-params">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Size (Lot)</label>
+                                    <input type="number" id="manual-size" value="0.1" step="0.01">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Stop Loss</label>
+                                    <input type="number" id="manual-sl" placeholder="Optional price">
+                                </div>
+                                <div class="form-group">
+                                    <label>Take Profit</label>
+                                    <input type="number" id="manual-tp" placeholder="Optional price">
+                                </div>
+                            </div>
+                            <div class="trade-buttons" style="display: flex; gap: 10px; margin-top: 15px;">
+                                <button class="btn btn-success" id="manual-buy" style="flex: 1;">BUY</button>
+                                <button class="btn btn-danger" id="manual-sell" style="flex: 1;">SELL</button>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="card glass" id="stats-card">
+                        <h3>Performance Summary</h3>
+                        <div class="stats-grid">
+                            <div class="stat-item">
+                                <label>Net PnL</label>
+                                <span id="stat-pnl">--</span>
+                            </div>
+                            <div class="stat-item">
+                                <label>Win Rate</label>
+                                <span id="stat-winrate">--</span>
+                            </div>
+                            <div class="stat-item">
+                                <label>Total Trades</label>
+                                <span id="stat-trades">--</span>
+                            </div>
+                            <div class="stat-item">
+                                <label>Max Drawdown</label>
+                                <span id="stat-drawdown">--</span>
+                            </div>
+                        </div>
+                        <button class="btn btn-secondary w-full hidden" id="save-report-btn"
+                            style="margin-top: 20px;">Save Report</button>
+                    </section>
+                </div>
+
+                <!-- Right Column: Chart & Trades -->
+                <div class="col-display">
+                    <section class="card glass chart-container">
+                        <div class="chart-header">
+                            <div class="timeframes" id="timeframe-selector">
+                                <button class="tf-btn" data-tf="5m">5m</button>
+                                <button class="tf-btn" data-tf="15m">15m</button>
+                                <button class="tf-btn active" data-tf="1h">1h</button>
+                            </div>
+                        </div>
+                        <div id="main-chart"></div>
+                    </section>
+
+                    <section class="card glass active-trades">
+                        <div class="section-header">
+                            <h3>Active Trades</h3>
+                            <span class="badge" id="active-trades-count">0 Open</span>
+                        </div>
+                        <div class="active-trades-list" id="active-trades-container">
+                            <!-- Populated by JS -->
+                            <div class="no-trades">No active trades</div>
+                        </div>
+                    </section>
+
+                </div>
+            </div>
+
+            <!-- Wallet View -->
+            <div id="view-wallet" class="hidden w-full">
+                <div class="wallet-grid">
+                    <section class="card glass wallet-management">
+                        <h3>Virtual Wallet</h3>
+                        <div class="wallet-status-card">
+                            <div class="balance-display">
+                                <label>Total Balance</label>
+                                <div class="big-balance"><span id="wallet-page-balance">0.00</span> <small>USDT</small></div>
+                            </div>
+                            <div class="balance-display">
+                                <label>Available to Trade</label>
+                                <div class="big-balance" style="font-size: 32px; margin-top: 0;"><span id="wallet-available-balance">0.00</span> <small>USDT</small></div>
+                            </div>
+                            <div class="wallet-actions-grid">
+                                <div class="form-group">
+                                    <label>Amount (USDT)</label>
+                                    <input type="number" id="wallet-amount" placeholder="0.00" class="input-large">
+                                </div>
+                                <div class="form-group">
+                                    <label>Reference / Note</label>
+                                    <input type="text" id="wallet-note" placeholder="Optional note...">
+                                </div>
+                                <div class="button-group">
+                                    <button class="btn btn-primary" id="confirm-deposit">
+                                        <span class="icon">↓</span> Deposit Funds
+                                    </button>
+                                    <button class="btn btn-danger" id="confirm-withdraw">
+                                        <span class="icon">↑</span> Withdraw
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="card glass wallet-history">
+                        <h3>Transaction History</h3>
+                        <div class="table-container">
+                            <table id="wallet-history-table">
+                                <thead>
+                                    <tr>
+                                        <th>Date & Time</th>
+                                        <th>Type</th>
+                                        <th>Amount</th>
+                                        <th>Balance After</th>
+                                        <th>Note</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Transactions go here -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+                </div>
+            </div>
+
+            <!-- Reports View -->
+            <div id="view-reports" class="hidden w-full">
+                <section class="card glass reports-browser">
+                    <div class="section-header">
+                        <h3>Saved Strategy Reports</h3>
+                        <span class="badge" id="reports-count">0 Reports</span>
+                    </div>
+                    <div class="table-container">
+                        <table id="reports-list-table">
+                            <thead>
+                                <tr>
+                                    <th>Saved On</th>
+                                    <th>Strategy Name</th>
+                                    <th>Net PnL</th>
+                                    <th>Win Rate</th>
+                                    <th>Trades</th>
+                                    <th>Max DD</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Reports go here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="card glass trade-log" style="margin-top: 24px;">
+                    <h3>Live/Manual Trade History</h3>
+                    <div class="table-scroll">
+                        <table id="trade-table">
+                            <thead>
+                                <tr>
+                                    <th>Type</th>
+                                    <th>Entry Price</th>
+                                    <th>Exit Price</th>
+                                    <th>PnL</th>
+                                    <th>Date</th>
+                                    <th>Entry Time</th>
+                                    <th>Exit Time</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <div id="loader" class="loader-overlay hidden">
+        <div class="spinner"></div>
+        <p>Analyzing BTCUSD Market...</p>
+    </div>
+
+    <script src="static/script.js"></script>
+</body>
+
+</html>
