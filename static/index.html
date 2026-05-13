@@ -23,6 +23,7 @@
 
             <nav class="nav-menu">
                 <div class="nav-item active" id="nav-dashboard">Dashboard</div>
+                <div class="nav-item" id="nav-insights">BTCUSD Insights</div>
                 <div class="nav-item" id="nav-wallet">Wallet</div>
                 <div class="nav-item" id="nav-reports">Reports</div>
             </nav>
@@ -290,6 +291,137 @@
                         </table>
                     </div>
                 </section>
+            </div>
+
+            <!-- Insights View -->
+            <div id="view-insights" class="hidden w-full">
+                <div class="insights-container">
+                    <!-- Top Header: Live Status -->
+                    <div class="insights-header-row">
+                        <div class="card glass status-card">
+                            <div class="live-status-large">
+                                <span class="label">Live BTC/USD Price</span>
+                                <div class="price-val" id="insights-live-price">$0,000.00</div>
+                                <div class="change-val" id="insights-live-change">+0.00% (+$00.00)</div>
+                            </div>
+                        </div>
+                        <div class="card glass sentiment-card">
+                            <h3>Market Sentiment</h3>
+                            <div class="fng-gauge-container">
+                                <div class="fng-gauge">
+                                    <div class="gauge-fill" id="fng-gauge-fill" style="width: 50%;"></div>
+                                </div>
+                                <div class="fng-meta">
+                                    <span id="fng-value">50</span>
+                                    <span id="fng-label">Neutral</span>
+                                </div>
+                                <div class="fng-scale">
+                                    <span>Fear</span>
+                                    <span>Greed</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Returns Grid -->
+                    <div class="roi-grid">
+                        <div class="card glass roi-card" id="roi-weekly">
+                            <label>Weekly Return</label>
+                            <div class="roi-val">--%</div>
+                            <div class="roi-price">Start: $--</div>
+                        </div>
+                        <div class="card glass roi-card" id="roi-monthly">
+                            <label>Monthly Return</label>
+                            <div class="roi-val">--%</div>
+                            <div class="roi-price">Start: $--</div>
+                        </div>
+                        <div class="card glass roi-card" id="roi-yearly">
+                            <label>Yearly (YTD)</label>
+                            <div class="roi-val">--%</div>
+                            <div class="roi-price">Start: $--</div>
+                        </div>
+                        <div class="card glass roi-card" id="roi-max">
+                            <label>Max Return (Cycle)</label>
+                            <div class="roi-val">--%</div>
+                            <div class="roi-price">Start: $--</div>
+                        </div>
+                    </div>
+
+                    <div class="insights-main-grid">
+                        <!-- Charting Engine -->
+                        <div class="col-chart">
+                            <section class="card glass insights-chart-container">
+                                <div class="chart-header">
+                                    <div class="chart-controls">
+                                        <div class="btn-group" id="chart-type-toggle">
+                                            <button class="btn btn-tab active" data-type="candle">Candlestick</button>
+                                            <button class="btn btn-tab" data-type="line">Line</button>
+                                        </div>
+                                        <div class="overlay-controls">
+                                            <label><input type="checkbox" id="toggle-ma"> MA (20)</label>
+                                            <label><input type="checkbox" id="toggle-rsi"> RSI</label>
+                                        </div>
+                                    </div>
+                                    <div class="timezone-label">Asia/Kolkata (IST)</div>
+                                </div>
+                                <div id="insights-chart"></div>
+                            </section>
+
+                            <section class="card glass whale-alerts">
+                                <h3>On-Chain "Whale" Alerts</h3>
+                                <div class="whale-list" id="whale-alerts-container">
+                                    <!-- Populated by JS -->
+                                    <div class="loading-small">Scanning blockchain...</div>
+                                </div>
+                            </section>
+                        </div>
+
+                        <!-- Sidebar Features -->
+                        <div class="col-features">
+                            <section class="card glass halving-card">
+                                <h3>Bitcoin Halving Countdown</h3>
+                                <div class="countdown-grid">
+                                    <div class="cd-item">
+                                        <span id="halving-days">--</span>
+                                        <label>Days</label>
+                                    </div>
+                                    <div class="cd-item">
+                                        <span id="halving-hours">--</span>
+                                        <label>Hours</label>
+                                    </div>
+                                </div>
+                                <p class="halving-date">Next Halving: <span id="halving-date-text">April 2028</span></p>
+                            </section>
+
+                            <section class="card glass pl-calculator">
+                                <h3>Profit/Loss Calculator</h3>
+                                <div class="form-group">
+                                    <label>Investment Amount (USD)</label>
+                                    <input type="number" id="calc-amount" placeholder="e.g., 1000">
+                                </div>
+                                <div class="form-group">
+                                    <label>Purchase Price (USD)</label>
+                                    <input type="number" id="calc-price" placeholder="e.g., 60000">
+                                </div>
+                                <div class="calc-results hidden" id="calc-results">
+                                    <div class="res-item">
+                                        <label>Current Value</label>
+                                        <span id="calc-current-val">$--</span>
+                                    </div>
+                                    <div class="res-item">
+                                        <label>Net Profit/Loss</label>
+                                        <span id="calc-net-pnl">$--</span>
+                                    </div>
+                                    <div class="res-item">
+                                        <label>ROI</label>
+                                        <span id="calc-roi">--%</span>
+                                    </div>
+                                </div>
+                                <button class="btn btn-primary w-full" id="btn-calculate" style="margin-top: 10px;">Calculate</button>
+                            </section>
+                        </div>
+                    </div>
+                </div>
             </div>
         </main>
     </div>

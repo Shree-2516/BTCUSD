@@ -18,6 +18,8 @@ from backtest.engine import BacktestEngine
 from strategies.base_strategy import BaseStrategy
 from database.db import init_db
 from livetest.trade_manager import trade_manager
+from insights.manager import insights_manager
+
 
 # Initialize database
 try:
@@ -283,6 +285,20 @@ async def start_live(req: LiveRequest):
 async def stop_live():
     live_test_manager.stop()
     return {"status": "Live testing stopped"}
+
+@app.get("/api/insights")
+async def get_insights():
+    try:
+        data = {
+            "fng": insights_manager.get_fear_greed_index(),
+            "roi": insights_manager.get_roi_data(),
+            "halving": insights_manager.get_halving_data(),
+            "whale_alerts": insights_manager.get_whale_alerts()
+        }
+        return data
+    except Exception as e:
+        print(f"Error in /api/insights: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 @app.websocket("/ws/live")
 async def websocket_endpoint(websocket: WebSocket):

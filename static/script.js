@@ -1,13 +1,16 @@
 let chart, candleSeries;
+let insightsChart, insightsSeries, insightsLineSeries, maSeries;
 let ws;
 let isLive = false;
 let currentResolution = "1h";
 let tradeMarkers = [];
 let lastBacktestReport = null;
 let activePriceLines = [];
+let insightsInitialLoad = false;
 
 document.addEventListener('DOMContentLoaded', () => {
     initChart();
+    initInsightsChart();
     loadStrategies();
     loadWallet();
     initWebSocket();
@@ -203,6 +206,7 @@ function initWebSocket() {
         const msg = JSON.parse(event.data);
         if (msg.type === 'ticker') {
             updateTickerUI(msg);
+            updateInsightsTicker(msg);
             if (msg.active_trades) {
                 renderActiveTrades(msg.active_trades);
                 updateChartMarkers(msg.active_trades);
@@ -226,6 +230,14 @@ function updateTickerUI(msg) {
     if (!lastPrice || !isFinite(lastPrice) || lastPrice <= 0) return;
 
     priceEl.textContent = `$${lastPrice.toLocaleString()}`;
+
+    const changeEl = document.getElementById('ticker-change');
+    if (changeEl && data.mark_change_24h !== undefined) {
+        const changePct = parseFloat(data.mark_change_24h);
+        const sign = changePct >= 0 ? '+' : '';
+        changeEl.textContent = `${sign}${changePct.toFixed(2)}%`;
+        changeEl.className = `change ${changePct >= 0 ? 'pnl-up' : 'pnl-down'}`;
+    }
     
     // Update chart if live
     if (isLive && candleSeries) {
@@ -290,6 +302,7 @@ function handleLiveEvent(event) {
 function setupEventListeners() {
     // Navigation
     document.getElementById('nav-dashboard').addEventListener('click', () => switchView('dashboard'));
+    document.getElementById('nav-insights').addEventListener('click', () => switchView('insights'));
     document.getElementById('nav-wallet').addEventListener('click', () => switchView('wallet'));
     document.getElementById('nav-reports').addEventListener('click', () => switchView('reports'));
     document.getElementById('btn-add-funds').addEventListener('click', () => switchView('wallet'));
@@ -337,6 +350,22 @@ function setupEventListeners() {
     document.getElementById('manual-buy').addEventListener('click', () => openManualTrade('BUY'));
     document.getElementById('manual-sell').addEventListener('click', () => openManualTrade('SELL'));
     
+    // P/L Calculator
+    document.getElementById('btn-calculate').addEventListener('click', calculatePL);
+
+    // Chart Toggles
+    document.querySelectorAll('#chart-type-toggle button').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('#chart-type-toggle button').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            toggleInsightsChartType(btn.dataset.type);
+        });
+    });
+
+    document.getElementById('toggle-ma').addEventListener('change', (e) => {
+        if (maSeries) maSeries.applyOptions({ visible: e.target.checked });
+    });
+
     // Initial trades load
     loadTradeHistory();
 }
@@ -348,10 +377,12 @@ function switchView(view) {
     const dashboard = document.querySelector('.dashboard-grid');
     const walletView = document.getElementById('view-wallet');
     const reportsView = document.getElementById('view-reports');
+    const insightsView = document.getElementById('view-insights');
 
     dashboard.classList.add('hidden');
     walletView.classList.add('hidden');
     reportsView.classList.add('hidden');
+    insightsView.classList.add('hidden');
 
     if (view === 'dashboard') {
         dashboard.classList.remove('hidden');
@@ -362,6 +393,13 @@ function switchView(view) {
         reportsView.classList.remove('hidden');
         loadReports();
         loadTradeHistory();
+    } else if (view === 'insights') {
+        insightsView.classList.remove('hidden');
+        loadInsights();
+        if (!insightsInitialLoad) {
+            fetchInsightsHistory();
+            insightsInitialLoad = true;
+        }
     }
 }
 
@@ -638,6 +676,179 @@ async function loadTradeHistory() {
     } catch (err) {
         console.error("Error loading trade history:", err);
     }
+}
+
+function updateInsightsTicker(msg) {
+    const data = msg.data;
+    if (!data) return;
+    
+    const lastPrice = parseFloat(data.mark_price || data.close || 0);
+    if (!lastPrice || lastPrice <= 0) return;
+
+    const priceEl = document.getElementById('insights-live-price');
+    if (priceEl) priceEl.textContent = `$${lastPrice.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+
+    const changeEl = document.getElementById('insights-live-change');
+    if (changeEl && data.mark_change_24h !== undefined) {
+        const changePct = parseFloat(data.mark_change_24h);
+        const openPrice = parseFloat(data.open || lastPrice);
+        const changeAbs = lastPrice - openPrice;
+        const sign = changePct >= 0 ? '+' : '';
+        
+        changeEl.textContent = `${sign}${changePct.toFixed(2)}% (${sign}$${Math.abs(changeAbs).toLocaleString(undefined, {minimumFractionDigits: 2})})`;
+        changeEl.className = `change-val ${changePct >= 0 ? 'pnl-up' : 'pnl-down'}`;
+    }
+
+    // Update insights chart if it exists
+    if (insightsSeries && insightsSeries.visible()) {
+        const resolutionSeconds = 3600; 
+        const candleTime = Math.floor(Date.now() / 1000 / resolutionSeconds) * resolutionSeconds;
+        insightsSeries.update({
+            time: candleTime,
+            open: lastPrice,
+            high: lastPrice,
+            low: lastPrice,
+            close: lastPrice
+        });
+    }
+    if (insightsLineSeries && insightsLineSeries.visible()) {
+        const candleTime = Math.floor(Date.now() / 1000);
+        insightsLineSeries.update({
+            time: candleTime,
+            value: lastPrice
+        });
+    }
+}
+
+function initInsightsChart() {
+    const container = document.getElementById('insights-chart');
+    if (!container) return;
+
+    const chartOptions = {
+        width: container.clientWidth,
+        height: container.clientHeight || 400,
+        layout: { background: { type: 'solid', color: 'transparent' }, textColor: '#94a3b8' },
+        grid: { vertLines: { color: 'rgba(255, 255, 255, 0.05)' }, horzLines: { color: 'rgba(255, 255, 255, 0.05)' } },
+        timeScale: { borderColor: 'rgba(255, 255, 255, 0.1)', timeVisible: true },
+        localization: { locale: 'en-IN' }
+    };
+
+    insightsChart = LightweightCharts.createChart(container, chartOptions);
+    
+    insightsSeries = insightsChart.addCandlestickSeries({
+        upColor: '#22c55e', downColor: '#ef4444', borderVisible: false,
+        wickUpColor: '#22c55e', wickDownColor: '#ef4444',
+    });
+
+    insightsLineSeries = insightsChart.addLineSeries({
+        color: '#3b82f6', lineWidth: 3, visible: false
+    });
+
+    maSeries = insightsChart.addLineSeries({
+        color: '#eab308', lineWidth: 1, title: 'MA(20)', visible: false
+    });
+
+    const resizeObserver = new ResizeObserver(entries => {
+        if (entries.length === 0 || !entries[0].contentRect) return;
+        const { width, height } = entries[0].contentRect;
+        insightsChart.applyOptions({ width, height });
+    });
+    resizeObserver.observe(container);
+}
+
+async function fetchInsightsHistory() {
+    try {
+        const res = await fetch(`/api/history?symbol=BTCUSD&resolution=1h`);
+        const data = await res.json();
+        if (data.length > 0) {
+            insightsSeries.setData(data);
+            insightsLineSeries.setData(data.map(d => ({ time: d.time, value: d.close })));
+            
+            // Calculate MA(20)
+            const maData = [];
+            for (let i = 20; i < data.length; i++) {
+                const slice = data.slice(i - 20, i);
+                const sum = slice.reduce((a, b) => a + b.close, 0);
+                maData.push({ time: data[i].time, value: sum / 20 });
+            }
+            maSeries.setData(maData);
+            
+            insightsChart.timeScale().fitContent();
+        }
+    } catch (err) {
+        console.error("Error fetching insights history:", err);
+    }
+}
+
+async function loadInsights() {
+    try {
+        const res = await fetch('/api/insights');
+        const data = await res.json();
+        
+        // Update F&G
+        document.getElementById('fng-value').textContent = data.fng.value;
+        document.getElementById('fng-label').textContent = data.fng.label;
+        document.getElementById('fng-gauge-fill').style.width = `${data.fng.value}%`;
+        
+        // Update ROI
+        for (const [label, roi] of Object.entries(data.roi)) {
+            const id = `roi-${label.toLowerCase().replace(' ', '-')}`;
+            const el = document.getElementById(id);
+            if (el) {
+                const valEl = el.querySelector('.roi-val');
+                valEl.textContent = `${roi.return_pct >= 0 ? '+' : ''}${roi.return_pct}%`;
+                valEl.className = `roi-val ${roi.return_pct >= 0 ? 'pnl-up' : 'pnl-down'}`;
+                el.querySelector('.roi-price').textContent = `${roi.start_date} @ $${roi.start_price.toLocaleString()}`;
+            }
+        }
+
+        // Update Whale Alerts
+        const whaleContainer = document.getElementById('whale-alerts-container');
+        whaleContainer.innerHTML = data.whale_alerts.map(a => `
+            <div class="whale-item impact-${a.impact.toLowerCase()}">
+                <div class="whale-msg">${a.message}</div>
+                <div class="whale-meta">Impact: ${a.impact} • ${a.time}</div>
+            </div>
+        `).join('');
+
+        // Update Halving
+        document.getElementById('halving-days').textContent = data.halving.days;
+        document.getElementById('halving-hours').textContent = data.halving.hours;
+        document.getElementById('halving-date-text').textContent = data.halving.date;
+
+    } catch (err) {
+        console.error("Error loading insights:", err);
+    }
+}
+
+function toggleInsightsChartType(type) {
+    if (type === 'candle') {
+        insightsSeries.applyOptions({ visible: true });
+        insightsLineSeries.applyOptions({ visible: false });
+    } else {
+        insightsSeries.applyOptions({ visible: false });
+        insightsLineSeries.applyOptions({ visible: true });
+    }
+}
+
+function calculatePL() {
+    const amount = parseFloat(document.getElementById('calc-amount').value);
+    const buyPrice = parseFloat(document.getElementById('calc-price').value);
+    const currentPrice = parseFloat(document.getElementById('insights-live-price').textContent.replace('$', '').replace(/,/g, ''));
+
+    if (!amount || !buyPrice || !currentPrice) return alert('Please enter valid numbers');
+
+    const units = amount / buyPrice;
+    const currentVal = units * currentPrice;
+    const pnl = currentVal - amount;
+    const roi = (pnl / amount) * 100;
+
+    document.getElementById('calc-results').classList.remove('hidden');
+    document.getElementById('calc-current-val').textContent = `$${currentVal.toLocaleString(undefined, {maximumFractionDigits: 2})}`;
+    document.getElementById('calc-net-pnl').textContent = `$${pnl.toLocaleString(undefined, {maximumFractionDigits: 2})}`;
+    document.getElementById('calc-net-pnl').className = pnl >= 0 ? 'pnl-up' : 'pnl-down';
+    document.getElementById('calc-roi').textContent = `${roi >= 0 ? '+' : ''}${roi.toFixed(2)}%`;
+    document.getElementById('calc-roi').className = roi >= 0 ? 'pnl-up' : 'pnl-down';
 }
 
 function updateChartMarkers(activeTrades) {

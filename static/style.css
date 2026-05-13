@@ -632,3 +632,249 @@ tr:hover {
     font-size: 14px;
     letter-spacing: 1px;
 }
+
+/* Insights View Styles */
+.insights-container {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    padding-bottom: 40px;
+}
+
+.insights-header-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+}
+
+.live-status-large {
+    padding: 10px;
+}
+
+.live-status-large .price-val {
+    font-size: 48px;
+    font-weight: 800;
+    font-family: 'Outfit', sans-serif;
+    color: #fff;
+    margin: 8px 0;
+}
+
+.live-status-large .change-val {
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.sentiment-card h3 {
+    margin-bottom: 20px;
+}
+
+.fng-gauge-container {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.fng-gauge {
+    height: 12px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    overflow: hidden;
+    position: relative;
+}
+
+.gauge-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #ef4444, #eab308, #22c55e);
+    width: 0%;
+    transition: width 1s ease-in-out;
+}
+
+.fng-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+#fng-value {
+    font-size: 32px;
+    font-weight: 800;
+    color: #fff;
+}
+
+#fng-label {
+    font-size: 18px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.fng-scale {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: #94a3b8;
+}
+
+.roi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+}
+
+.roi-card {
+    text-align: center;
+    padding: 20px;
+}
+
+.roi-val {
+    font-size: 28px;
+    font-weight: 700;
+    margin: 10px 0;
+}
+
+.roi-price {
+    font-size: 14px;
+    color: #94a3b8;
+}
+
+.insights-main-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 24px;
+}
+
+.col-chart {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.insights-chart-container {
+    height: 500px;
+    display: flex;
+    flex-direction: column;
+}
+
+#insights-chart {
+    flex: 1;
+    min-height: 0;
+}
+
+.chart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.chart-controls {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+}
+
+.overlay-controls {
+    display: flex;
+    gap: 12px;
+    font-size: 14px;
+    color: #94a3b8;
+}
+
+.overlay-controls label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+}
+
+.timezone-label {
+    font-size: 12px;
+    color: #64748b;
+}
+
+.whale-alerts {
+    max-height: 350px;
+    overflow-y: auto;
+}
+
+.whale-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.whale-item {
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+    border-left: 4px solid #3b82f6;
+    font-size: 14px;
+    transition: all 0.2s;
+}
+
+.whale-item:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.whale-item.impact-high { border-left-color: #ef4444; }
+.whale-item.impact-medium { border-left-color: #eab308; }
+
+.halving-card {
+    text-align: center;
+}
+
+.countdown-grid {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    margin: 20px 0;
+}
+
+.cd-item {
+    display: flex;
+    flex-direction: column;
+}
+
+.cd-item span {
+    font-size: 36px;
+    font-weight: 800;
+    color: #fff;
+}
+
+.cd-item label {
+    font-size: 12px;
+    color: #94a3b8;
+}
+
+.halving-date {
+    font-size: 14px;
+    color: #3b82f6;
+}
+
+.pl-calculator h3 { margin-bottom: 16px; }
+
+.calc-results {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.res-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.res-item label { font-size: 13px; color: #94a3b8; }
+.res-item span { font-weight: 600; font-size: 16px; }
+
+@media (max-width: 1200px) {
+    .insights-header-row, .roi-grid, .insights-main-grid {
+        grid-template-columns: 1fr;
+    }
+    .roi-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}
