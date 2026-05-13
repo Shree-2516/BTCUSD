@@ -1,0 +1,21 @@
+# Environments
+.venv/
+env/
+venv/
+
+# Secrets and Config
+.env
+
+# Python bytecode
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# Data and Reports (Optional: ignore if these contain large/private data)
+report/backtest_reports/
+report/live_trades/
+wallet/balance.json
+
+# OS files
+.DS_Store
+Thumbs.db
