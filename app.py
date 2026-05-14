@@ -19,6 +19,9 @@ from strategies.base_strategy import BaseStrategy
 from database.db import init_db
 from livetest.trade_manager import trade_manager
 from insights.manager import insights_manager
+from insights.prediction_engine import prediction_engine
+from insights.layered_engine import layered_prediction_engine
+from livetest.metrics_tracker import metrics_tracker
 
 
 # Initialize database
@@ -102,6 +105,14 @@ async def withdraw_funds(req: FundRequest):
         return {"status": "success", "balance": balance}
     except ValueError as e:
         return JSONResponse(status_code=400, content={"error": str(e)})
+
+@app.post("/api/wallet/reset")
+async def reset_wallet():
+    success = wallet_manager.reset_wallet()
+    if success:
+        return {"status": "success", "message": "Wallet reset successfully"}
+    else:
+        return JSONResponse(status_code=500, content={"error": "Failed to reset wallet"})
 
 @app.get("/api/reports")
 async def list_reports():
@@ -197,24 +208,6 @@ async def get_active_trades():
 async def get_trade_history():
     return trade_manager.get_trade_history()
 
-class OpenTradeRequest(BaseModel):
-    side: str
-    size: float
-    stop_loss: Optional[float] = None
-    take_profit: Optional[float] = None
-
-@app.post("/api/trade/open")
-async def open_manual_trade(req: OpenTradeRequest):
-    ticker = delta_api.get_ticker("BTCUSD")
-    if not ticker:
-        return JSONResponse(status_code=500, content={"error": "Could not fetch current price"})
-    
-    price = float(ticker['mark_price'])
-    try:
-        trade_id = trade_manager.open_trade("BTCUSD", req.side, price, req.size, req.stop_loss, req.take_profit, "MANUAL")
-        return {"status": "success", "trade_id": trade_id}
-    except ValueError as e:
-        return JSONResponse(status_code=400, content={"error": str(e)})
 
 @app.get("/api/strategies/configs")
 async def get_strategy_configs():
@@ -242,21 +235,6 @@ async def save_strategy_config(req: StrategyConfigReq):
     db.close()
     return {"status": "success"}
 
-class CloseTradeRequest(BaseModel):
-    trade_id: int
-
-@app.post("/api/trade/close")
-async def close_manual_trade(req: CloseTradeRequest):
-    ticker = delta_api.get_ticker("BTCUSD")
-    if not ticker:
-        return JSONResponse(status_code=500, content={"error": "Could not fetch current price"})
-    
-    price = float(ticker['mark_price'])
-    try:
-        pnl = trade_manager.close_trade(req.trade_id, price, "Manual Exit")
-        return {"status": "success", "pnl": pnl}
-    except ValueError as e:
-        return JSONResponse(status_code=400, content={"error": str(e)})
 
 from livetest.manager import live_test_manager
 
@@ -299,6 +277,22 @@ async def get_insights():
     except Exception as e:
         print(f"Error in /api/insights: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.get("/api/ai-insights")
+async def get_ai_insights():
+    """Layered AI Prediction and advanced analytics endpoint"""
+    try:
+        # Use the new layered engine
+        prediction = layered_prediction_engine.get_layered_prediction("BTCUSD")
+        return prediction
+    except Exception as e:
+        # Fallback to legacy engine if layered fails
+        print(f"Layered Engine Error: {e}, falling back to legacy.")
+        try:
+            prediction = prediction_engine.get_live_prediction("BTCUSD")
+            return prediction
+        except Exception as e2:
+            return {"error": str(e2), "trend": "ERROR", "confidence": 0}
 
 @app.websocket("/ws/live")
 async def websocket_endpoint(websocket: WebSocket):
@@ -349,6 +343,22 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         print("Client disconnected")
 
+@app.on_event("startup")
+async def startup_event():
+    """Background task for metrics tracking"""
+    async def metrics_loop():
+        while True:
+            try:
+                ticker = delta_api.get_ticker("BTCUSD")
+                if ticker:
+                    metrics_tracker.update_metrics(float(ticker['mark_price']))
+            except Exception as e:
+                print(f"Metrics Loop Error: {e}")
+            await asyncio.sleep(60) # Update metrics every minute
+            
+    asyncio.create_task(metrics_loop())
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Use reload=True for development so changes to app.py are picked up automatically
+    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)

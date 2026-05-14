@@ -70,6 +70,17 @@ class StrategyConfig(Base):
     is_active = Column(Integer, default=1)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+class PerformanceMetric(Base):
+    __tablename__ = "performance_metrics"
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    total_balance = Column(Float)
+    unrealized_pnl = Column(Float)
+    daily_return = Column(Float, default=0.0)
+    sharpe_ratio = Column(Float, default=0.0)
+    max_drawdown = Column(Float, default=0.0)
+    open_trades_count = Column(Integer, default=0)
+
 def init_db():
     Base.metadata.create_all(bind=engine)
     

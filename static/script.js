@@ -305,6 +305,7 @@ function setupEventListeners() {
     document.getElementById('nav-insights').addEventListener('click', () => switchView('insights'));
     document.getElementById('nav-wallet').addEventListener('click', () => switchView('wallet'));
     document.getElementById('nav-reports').addEventListener('click', () => switchView('reports'));
+    document.getElementById('nav-ai').addEventListener('click', () => switchView('ai'));
     document.getElementById('btn-add-funds').addEventListener('click', () => switchView('wallet'));
 
     // Timeframe selector
@@ -326,7 +327,6 @@ function setupEventListeners() {
             const tab = btn.dataset.tab;
             document.getElementById('backtest-params').classList.add('hidden');
             document.getElementById('livetest-params').classList.add('hidden');
-            document.getElementById('manual-params').classList.add('hidden');
             
             document.getElementById(`${tab}-params`).classList.remove('hidden');
         });
@@ -341,14 +341,12 @@ function setupEventListeners() {
     // Wallet Actions
     document.getElementById('confirm-deposit').addEventListener('click', () => handleWalletAction('deposit'));
     document.getElementById('confirm-withdraw').addEventListener('click', () => handleWalletAction('withdraw'));
+    document.getElementById('btn-reset-wallet')?.addEventListener('click', resetWallet);
 
     // Live Test
     document.getElementById('start-live').addEventListener('click', () => toggleLive(true));
     document.getElementById('stop-live').addEventListener('click', () => toggleLive(false));
 
-    // Manual Trade
-    document.getElementById('manual-buy').addEventListener('click', () => openManualTrade('BUY'));
-    document.getElementById('manual-sell').addEventListener('click', () => openManualTrade('SELL'));
     
     // P/L Calculator
     document.getElementById('btn-calculate').addEventListener('click', calculatePL);
@@ -371,35 +369,163 @@ function setupEventListeners() {
 }
 
 function switchView(view) {
+    console.log(`DEBUG: Switching view to ${view}`);
+    
+    // 1. Update Navigation UI
     document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-    document.getElementById(`nav-${view}`).classList.add('active');
+    const navItem = document.getElementById(`nav-${view}`);
+    if (navItem) navItem.classList.add('active');
 
-    const dashboard = document.querySelector('.dashboard-grid');
-    const walletView = document.getElementById('view-wallet');
-    const reportsView = document.getElementById('view-reports');
-    const insightsView = document.getElementById('view-insights');
+    // 2. Hide all views
+    const views = {
+        'dashboard': document.querySelector('.dashboard-grid'),
+        'wallet': document.getElementById('view-wallet'),
+        'reports': document.getElementById('view-reports'),
+        'insights': document.getElementById('view-insights'),
+        'ai': document.getElementById('view-ai')
+    };
 
-    dashboard.classList.add('hidden');
-    walletView.classList.add('hidden');
-    reportsView.classList.add('hidden');
-    insightsView.classList.add('hidden');
+    Object.values(views).forEach(v => {
+        if (v) v.classList.add('hidden');
+    });
 
-    if (view === 'dashboard') {
-        dashboard.classList.remove('hidden');
-    } else if (view === 'wallet') {
-        walletView.classList.remove('hidden');
+    // 3. Show requested view
+    const activeView = views[view];
+    if (activeView) {
+        console.log(`DEBUG: Showing view element for ${view}`);
+        activeView.classList.remove('hidden');
+    } else {
+        console.warn(`DEBUG: No view element found for ${view}`);
+    }
+
+    // 4. Trigger view-specific logic
+    if (view === 'wallet') {
         loadWalletHistory();
     } else if (view === 'reports') {
-        reportsView.classList.remove('hidden');
         loadReports();
         loadTradeHistory();
     } else if (view === 'insights') {
-        insightsView.classList.remove('hidden');
         loadInsights();
         if (!insightsInitialLoad) {
             fetchInsightsHistory();
             insightsInitialLoad = true;
         }
+    } else if (view === 'ai') {
+        loadAIInsights();
+    }
+}
+
+async function loadAIInsights() {
+    console.log("DEBUG: Loading AI Insights...");
+    try {
+        const response = await fetch('/api/ai-insights');
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const data = await response.json();
+        console.log("DEBUG: AI Data received:", data);
+        
+        if (data.error) {
+            console.error("AI API Error:", data.error);
+            return;
+        }
+
+        // 1. Update Gauge
+        const confidence = data.confidence || 0;
+        const trend = data.trend || 'HOLD';
+        const gaugePath = document.getElementById('ai-gauge-path');
+        const confidenceEl = document.getElementById('ai-confidence');
+        const trendEl = document.getElementById('ai-trend');
+
+        if (gaugePath) {
+            // Full dash is 125.6
+            const offset = 125.6 * (1 - (confidence / 100));
+            gaugePath.style.strokeDashoffset = offset;
+            gaugePath.style.stroke = trend === 'BUY' ? '#22c55e' : trend === 'SELL' ? '#ef4444' : '#f59e0b';
+        }
+        if (confidenceEl) confidenceEl.textContent = `${confidence}%`;
+        if (trendEl) trendEl.textContent = trend;
+
+        // 2. Update Meta
+        const trendText = document.getElementById('ai-trend-text');
+        if (trendText) {
+            trendText.textContent = trend;
+            trendText.className = trend === 'BUY' ? 'pnl-up' : trend === 'SELL' ? 'pnl-down' : '';
+        }
+        const volText = document.getElementById('ai-vol-text');
+        if (volText) volText.textContent = data.volatility_forecast || '--%';
+        
+        const whaleText = document.getElementById('ai-whale-text');
+        if (whaleText) whaleText.textContent = data.whale_activity || 'Stable';
+
+        // 3. Update Indicator Breakdown
+        if (data.indicators) {
+            const maEl = document.getElementById('ind-ma');
+            const volEl = document.getElementById('ind-vol');
+            const momEl = document.getElementById('ind-mom');
+
+            if (maEl) {
+                maEl.textContent = data.indicators["MA Cross"];
+                maEl.className = data.indicators["MA Cross"] === 'BULLISH' ? 'pnl-up' : 'pnl-down';
+            }
+            if (volEl) {
+                volEl.textContent = data.indicators["Volatility"];
+                volEl.className = data.indicators["Volatility"] === 'STABLE' ? 'pnl-up' : 'pnl-down';
+            }
+            if (momEl) {
+                momEl.textContent = data.indicators["Momentum"];
+                momEl.className = data.indicators["Momentum"] === 'POSITIVE' ? 'pnl-up' : 'pnl-down';
+            }
+        }
+
+        // 4. Update Range
+        if (data.predicted_range) {
+            const lowEl = document.getElementById('range-low');
+            const highEl = document.getElementById('range-high');
+            if (lowEl) lowEl.textContent = `$${data.predicted_range.low.toLocaleString(undefined, {maximumFractionDigits: 0})}`;
+            if (highEl) highEl.textContent = `$${data.predicted_range.high.toLocaleString(undefined, {maximumFractionDigits: 0})}`;
+            
+            // Adjust progress bar position (mock logic for visual)
+            const progress = document.getElementById('range-progress-bar');
+            if (progress) {
+                progress.style.left = '10%';
+                progress.style.right = '10%';
+            }
+        }
+
+        // 5. Update Success Rate
+        if (data.accuracy_48h !== undefined) {
+            const successRateEl = document.getElementById('ai-success-rate');
+            const successPathEl = document.getElementById('ai-success-path');
+            if (successRateEl) successRateEl.textContent = `${data.accuracy_48h}%`;
+            if (successPathEl) {
+                successPathEl.setAttribute('stroke-dasharray', `${data.accuracy_48h}, 100`);
+            }
+        }
+
+        // 6. Update AI Intelligence Dashboard
+        if (data.layers && data.layers.ai_sentiment) {
+            console.log("DEBUG: Updating AI Intelligence Dashboard", data.layers.ai_sentiment);
+            const ai = data.layers.ai_sentiment;
+            const thesisEl = document.getElementById('ai-thesis');
+            const riskEl = document.getElementById('ai-risk-level');
+            const contextEl = document.getElementById('ai-context');
+
+            if (thesisEl) thesisEl.textContent = ai.trade_thesis || ai.reasoning || "Analysis complete.";
+            if (riskEl) {
+                const riskVal = ai.risk_level || 'MEDIUM';
+                riskEl.textContent = riskVal;
+                
+                // Dynamic styling for risk
+                const riskColors = { 'LOW': '#22c55e', 'MEDIUM': '#f59e0b', 'HIGH': '#ef4444', 'CRITICAL': '#7f1d1d' };
+                riskEl.style.background = riskColors[riskVal] || '#f59e0b';
+                riskEl.style.color = 'white';
+                riskEl.style.padding = '2px 8px';
+                riskEl.style.borderRadius = '4px';
+                riskEl.style.fontWeight = 'bold';
+            }
+            if (contextEl) contextEl.textContent = ai.market_context || 'Stable';
+        }
+    } catch (e) {
+        console.error("Error loading AI insights:", e);
     }
 }
 
@@ -507,6 +633,24 @@ async function handleWalletAction(action) {
     }
 }
 
+async function resetWallet() {
+    if (!confirm("Are you sure you want to RESET the wallet? This will delete all history and set balance to 0.")) return;
+    
+    try {
+        const res = await fetch('/api/wallet/reset', { method: 'POST' });
+        const data = await res.json();
+        if (data.status === 'success') {
+            alert('Wallet reset successfully!');
+            loadWallet();
+            loadWalletHistory();
+        } else {
+            throw new Error(data.error || 'Reset failed');
+        }
+    } catch (err) {
+        alert('Failed to reset wallet: ' + err.message);
+    }
+}
+
 async function toggleLive(active) {
     const strategyName = document.getElementById('strategy-select').value;
     if (active && !strategyName) return alert('Please select a strategy');
@@ -564,50 +708,6 @@ async function fetchInitialData() {
     }
 }
 
-async function openManualTrade(side) {
-    const sizeVal = document.getElementById('manual-size').value;
-    const slVal = document.getElementById('manual-sl').value;
-    const tpVal = document.getElementById('manual-tp').value;
-
-    const size = parseFloat(sizeVal);
-    const sl = slVal ? parseFloat(slVal) : null;
-    const tp = tpVal ? parseFloat(tpVal) : null;
-
-    if (!size || size <= 0) return alert('Please enter a valid size');
-
-    try {
-        const res = await fetch('/api/trade/open', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ side, size, stop_loss: sl, take_profit: tp })
-        });
-        const data = await res.json();
-        if (data.error) throw new Error(data.error);
-        
-        alert(`Manual ${side} trade opened!`);
-        loadWallet();
-    } catch (err) {
-        alert('Trade Failed: ' + err.message);
-    }
-}
-
-async function closeTrade(tradeId) {
-    try {
-        const res = await fetch('/api/trade/close', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ trade_id: tradeId })
-        });
-        const data = await res.json();
-        if (data.error) throw new Error(data.error);
-        
-        alert('Trade closed successfully!');
-        loadWallet();
-        loadTradeHistory();
-    } catch (err) {
-        alert('Failed to close trade: ' + err.message);
-    }
-}
 
 function renderActiveTrades(trades) {
     const container = document.getElementById('active-trades-container');
@@ -645,7 +745,6 @@ function renderActiveTrades(trades) {
                 <div class="live-pnl ${t.unrealized_pnl >= 0 ? 'pnl-up' : 'pnl-down'}">
                     ${t.unrealized_pnl >= 0 ? '+' : ''}${t.unrealized_pnl.toFixed(2)}
                 </div>
-                <button class="btn-close-trade" onclick="closeTrade(${t.id})">Close Position</button>
             </div>
         </div>
     `).join('');
@@ -663,7 +762,7 @@ async function loadTradeHistory() {
         trades.forEach(t => {
             const row = document.createElement('tr');
             row.innerHTML = `
-                <td>${t.type} <small>(${t.trade_type})</small></td>
+                <td>${t.type}</td>
                 <td>${t.entry_price.toFixed(2)}</td>
                 <td>${t.exit_price ? t.exit_price.toFixed(2) : '--'}</td>
                 <td class="${t.pnl >= 0 ? 'pnl-up' : 'pnl-down'}">${t.pnl.toFixed(2)}</td>
@@ -679,44 +778,49 @@ async function loadTradeHistory() {
 }
 
 function updateInsightsTicker(msg) {
-    const data = msg.data;
-    if (!data) return;
-    
-    const lastPrice = parseFloat(data.mark_price || data.close || 0);
-    if (!lastPrice || lastPrice <= 0) return;
-
-    const priceEl = document.getElementById('insights-live-price');
-    if (priceEl) priceEl.textContent = `$${lastPrice.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-
-    const changeEl = document.getElementById('insights-live-change');
-    if (changeEl && data.mark_change_24h !== undefined) {
-        const changePct = parseFloat(data.mark_change_24h);
-        const openPrice = parseFloat(data.open || lastPrice);
-        const changeAbs = lastPrice - openPrice;
-        const sign = changePct >= 0 ? '+' : '';
+    try {
+        const data = msg.data;
+        if (!data) return;
         
-        changeEl.textContent = `${sign}${changePct.toFixed(2)}% (${sign}$${Math.abs(changeAbs).toLocaleString(undefined, {minimumFractionDigits: 2})})`;
-        changeEl.className = `change-val ${changePct >= 0 ? 'pnl-up' : 'pnl-down'}`;
-    }
+        const lastPrice = parseFloat(data.mark_price || data.close || 0);
+        if (!lastPrice || lastPrice <= 0) return;
 
-    // Update insights chart if it exists
-    if (insightsSeries && insightsSeries.visible()) {
-        const resolutionSeconds = 3600; 
-        const candleTime = Math.floor(Date.now() / 1000 / resolutionSeconds) * resolutionSeconds;
-        insightsSeries.update({
-            time: candleTime,
-            open: lastPrice,
-            high: lastPrice,
-            low: lastPrice,
-            close: lastPrice
-        });
-    }
-    if (insightsLineSeries && insightsLineSeries.visible()) {
-        const candleTime = Math.floor(Date.now() / 1000);
-        insightsLineSeries.update({
-            time: candleTime,
-            value: lastPrice
-        });
+        const priceEl = document.getElementById('insights-live-price');
+        if (priceEl) priceEl.textContent = `$${lastPrice.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+
+        const changeEl = document.getElementById('insights-live-change');
+        if (changeEl && data.mark_change_24h !== undefined) {
+            const changePct = parseFloat(data.mark_change_24h);
+            const openPrice = parseFloat(data.open || lastPrice);
+            const changeAbs = lastPrice - openPrice;
+            const sign = changePct >= 0 ? '+' : '';
+            
+            changeEl.textContent = `${sign}${changePct.toFixed(2)}% (${sign}$${Math.abs(changeAbs).toLocaleString(undefined, {minimumFractionDigits: 2})})`;
+            changeEl.className = `change-val ${changePct >= 0 ? 'pnl-up' : 'pnl-down'}`;
+        }
+
+        // Update insights chart if it exists and is visible
+        if (insightsSeries && typeof insightsSeries.options === 'function') {
+            const options = insightsSeries.options();
+            if (options && options.visible) {
+                const resolutionSeconds = 3600; 
+                const candleTime = Math.floor(Date.now() / 1000 / resolutionSeconds) * resolutionSeconds;
+                insightsSeries.update({
+                    time: candleTime, open: lastPrice, high: lastPrice, low: lastPrice, close: lastPrice
+                });
+            }
+        }
+        
+        if (insightsLineSeries && typeof insightsLineSeries.options === 'function') {
+            const options = insightsLineSeries.options();
+            if (options && options.visible) {
+                const candleTime = Math.floor(Date.now() / 1000);
+                insightsLineSeries.update({ time: candleTime, value: lastPrice });
+            }
+        }
+    } catch (err) {
+        // Silently catch to prevent WebSocket thread crash
+        console.error("Error in updateInsightsTicker:", err);
     }
 }
 

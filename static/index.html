@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SHREE BTCUSD Dashboard</title>
-    <link rel="stylesheet" href="static/style.css">
+    <link rel="stylesheet" href="static/style.css?v=1.0.2">
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Outfit:wght@400;600;800&display=swap"
         rel="stylesheet">
@@ -26,6 +26,7 @@
                 <div class="nav-item" id="nav-insights">BTCUSD Insights</div>
                 <div class="nav-item" id="nav-wallet">Wallet</div>
                 <div class="nav-item" id="nav-reports">Reports</div>
+                <div class="nav-item" id="nav-ai">AI Predictions</div>
             </nav>
 
             <div class="wallet-mini">
@@ -69,7 +70,6 @@
                         <div class="tabs">
                             <button class="tab-btn active" data-tab="backtest">Backtest</button>
                             <button class="tab-btn" data-tab="livetest">Live Test</button>
-                            <button class="tab-btn" data-tab="manual">Manual</button>
                         </div>
 
                         <div class="tab-content" id="backtest-params">
@@ -110,28 +110,6 @@
                             </div>
                         </div>
 
-                        <div class="tab-content hidden" id="manual-params">
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label>Size (Lot)</label>
-                                    <input type="number" id="manual-size" value="0.1" step="0.01">
-                                </div>
-                            </div>
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label>Stop Loss</label>
-                                    <input type="number" id="manual-sl" placeholder="Optional price">
-                                </div>
-                                <div class="form-group">
-                                    <label>Take Profit</label>
-                                    <input type="number" id="manual-tp" placeholder="Optional price">
-                                </div>
-                            </div>
-                            <div class="trade-buttons" style="display: flex; gap: 10px; margin-top: 15px;">
-                                <button class="btn btn-success" id="manual-buy" style="flex: 1;">BUY</button>
-                                <button class="btn btn-danger" id="manual-sell" style="flex: 1;">SELL</button>
-                            </div>
-                        </div>
                     </section>
 
                     <section class="card glass" id="stats-card">
@@ -194,11 +172,13 @@
                         <div class="wallet-status-card">
                             <div class="balance-display">
                                 <label>Total Balance</label>
-                                <div class="big-balance"><span id="wallet-page-balance">0.00</span> <small>USDT</small></div>
+                                <div class="big-balance"><span id="wallet-page-balance">0.00</span> <small>USDT</small>
+                                </div>
                             </div>
                             <div class="balance-display">
                                 <label>Available to Trade</label>
-                                <div class="big-balance" style="font-size: 32px; margin-top: 0;"><span id="wallet-available-balance">0.00</span> <small>USDT</small></div>
+                                <div class="big-balance" style="font-size: 32px; margin-top: 0;"><span
+                                        id="wallet-available-balance">0.00</span> <small>USDT</small></div>
                             </div>
                             <div class="wallet-actions-grid">
                                 <div class="form-group">
@@ -211,10 +191,14 @@
                                 </div>
                                 <div class="button-group">
                                     <button class="btn btn-primary" id="confirm-deposit">
-                                        <span class="icon">↓</span> Deposit Funds
+                                        <span class="icon"></span> Deposit Funds
                                     </button>
                                     <button class="btn btn-danger" id="confirm-withdraw">
-                                        <span class="icon">↑</span> Withdraw
+                                        <span class="icon"></span> Withdraw
+                                    </button>
+                                    <button class="btn btn-danger" id="btn-reset-wallet"
+                                        style="background: rgba(239, 68, 68, 0.1); border: 1px solid var(--danger); margin-left: auto;">
+                                        <span class="icon"></span> Reset Wallet
                                     </button>
                                 </div>
                             </div>
@@ -271,7 +255,7 @@
                 </section>
 
                 <section class="card glass trade-log" style="margin-top: 24px;">
-                    <h3>Live/Manual Trade History</h3>
+                    <h3>Live Trade History</h3>
                     <div class="table-scroll">
                         <table id="trade-table">
                             <thead>
@@ -417,21 +401,134 @@
                                         <span id="calc-roi">--%</span>
                                     </div>
                                 </div>
-                                <button class="btn btn-primary w-full" id="btn-calculate" style="margin-top: 10px;">Calculate</button>
+                                <button class="btn btn-primary w-full" id="btn-calculate"
+                                    style="margin-top: 10px;">Calculate</button>
                             </section>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- AI Predictions View -->
+            <div id="view-ai" class="hidden w-full">
+                <div class="ai-container" style="padding: 24px;">
+                    <div class="insights-header-row">
+                        <div class="card glass ai-status-card">
+                            <h3>AI SIGNAL GAUGE</h3>
+                            <div class="ai-gauge-container">
+                                <div class="ai-gauge">
+                                    <svg viewBox="0 0 100 50">
+                                        <path d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke="rgba(255,255,255,0.1)"
+                                            stroke-width="8" stroke-linecap="round" />
+                                        <path id="ai-gauge-path" d="M 10 50 A 40 40 0 0 1 90 50" fill="none"
+                                            stroke="#22c55e" stroke-width="8" stroke-dasharray="125.6"
+                                            stroke-dashoffset="125.6" stroke-linecap="round"
+                                            style="transition: stroke-dashoffset 1.5s ease-out;" />
+                                    </svg>
+                                    <div class="ai-gauge-val">
+                                        <span id="ai-confidence">0%</span>
+                                        <label id="ai-trend">ANALYZING</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card glass prediction-meta">
+                            <div class="meta-item">
+                                <label>Next-Hour Trend</label>
+                                <span id="ai-trend-text" class="loading-text">Analyzing...</span>
+                            </div>
+                            <div class="meta-item">
+                                <label>4h Volatility Forecast</label>
+                                <span id="ai-vol-text">--%</span>
+                            </div>
+                            <div class="meta-item">
+                                <label>Whale Activity</label>
+                                <span id="ai-whale-text">Stable</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="indicators-row" style="margin-top: 24px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px;">
+                        <div class="card glass" style="padding: 15px; display: flex; flex-direction: column; align-items: center; gap: 8px;">
+                            <label style="font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px;">Trend Signal</label>
+                            <span id="ind-ma" style="font-size: 18px; font-weight: 700;">--</span>
+                        </div>
+                        <div class="card glass" style="padding: 15px; display: flex; flex-direction: column; align-items: center; gap: 8px;">
+                            <label style="font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px;">Volatility State</label>
+                            <span id="ind-vol" style="font-size: 18px; font-weight: 700;">--</span>
+                        </div>
+                        <div class="card glass" style="padding: 15px; display: flex; flex-direction: column; align-items: center; gap: 8px;">
+                            <label style="font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px;">Momentum</label>
+                            <span id="ind-mom" style="font-size: 18px; font-weight: 700;">--</span>
+                        </div>
+                    </div>
+
+                    <div class="insights-main-grid" style="margin-top: 24px;">
+                        <div class="card glass">
+                            <div class="section-header">
+                                <h3>Predicted Trading Range (Next 4h)</h3>
+                                <span class="badge">AI Forecast</span>
+                            </div>
+                            <div class="range-display">
+                                <div class="range-bar">
+                                    <span id="range-low">$0.00</span>
+                                    <div class="range-progress" id="range-progress-bar"></div>
+                                    <span id="range-high">$0.00</span>
+                                </div>
+                                <p class="range-meta">Confidence: <span id="range-conf-text">High</span> • Based ML
+                                    model</p>
+                            </div>
+                        </div>
+
+                        <div class="card glass">
+                            <h3>Historical Success Rate</h3>
+                            <div class="success-stats">
+                                <div class="stat-circle">
+                                    <svg viewBox="0 0 36 36">
+                                        <path
+                                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                            fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="2" />
+                                        <path id="ai-success-path" stroke-dasharray="82, 100"
+                                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                            fill="none" stroke="#22c55e" stroke-width="2" />
+                                    </svg>
+                                    <span id="ai-success-rate">82%</span>
+                                </div>
+                                <p>Historical Accuracy over 48h</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="ai-intelligence-row" style="margin-top: 24px; display: grid; grid-template-columns: 2fr 1fr; gap: 24px;">
+                        <div class="card glass">
+                            <h3>AI Trade Thesis</h3>
+                            <p id="ai-thesis" style="color: var(--text-secondary); line-height: 1.6; margin-top: 10px;">
+                                Analyzing market structure and volume profiles to generate a technical justification...
+                            </p>
+                        </div>
+                        <div class="card glass">
+                            <h3>Risk & Context</h3>
+                            <div class="risk-meta" style="margin-top: 10px;">
+                                <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                    <label style="color: var(--text-secondary);">Risk Level</label>
+                                    <span id="ai-risk-level" class="badge">--</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between;">
+                                    <label style="color: var(--text-secondary);">Market Context</label>
+                                    <span id="ai-context" style="font-weight: 600;">--</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
         </main>
     </div>
-
     <div id="loader" class="loader-overlay hidden">
         <div class="spinner"></div>
         <p>Analyzing BTCUSD Market...</p>
     </div>
 
-    <script src="static/script.js"></script>
+    <script src="static/script.js?v=1.0.2"></script>
 </body>
 
 </html>

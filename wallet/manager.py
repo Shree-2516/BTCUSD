@@ -109,4 +109,24 @@ class WalletManager:
         finally:
             db.close()
 
+    def reset_wallet(self):
+        db = self.get_session()
+        try:
+            # 1. Delete all transactions
+            db.query(Transaction).delete()
+            
+            # 2. Reset wallet balance to zero
+            wallet = self.get_wallet(db)
+            wallet.balance = 0.0
+            wallet.available_balance = 0.0
+            
+            db.commit()
+            return True
+        except Exception as e:
+            db.rollback()
+            print(f"Error resetting wallet: {e}")
+            return False
+        finally:
+            db.close()
+
 wallet_manager = WalletManager()
