@@ -70,4 +70,16 @@ class ReportManager:
         finally:
             db.close()
 
+    def export_report(self, report_id, format='csv'):
+        from report.exports import ExportManager
+        report_data = self.get_report_details(report_id)
+        if not report_data:
+            return None
+            
+        if format == 'csv':
+            return ExportManager.to_csv(report_data.get('trades', []))
+        elif format == 'excel':
+            return ExportManager.to_excel(report_data)
+        return None
+
 report_manager = ReportManager()

@@ -4,12 +4,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SHREE BTCUSD Dashboard</title>
+    <title>BTCUSD Dashboard - DEBUG</title>
     <link rel="stylesheet" href="static/style.css?v=1.0.2">
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Outfit:wght@400;600;800&display=swap"
         rel="stylesheet">
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 
 <body>
@@ -26,6 +27,7 @@
                 <div class="nav-item" id="nav-insights">BTCUSD Insights</div>
                 <div class="nav-item" id="nav-wallet">Wallet</div>
                 <div class="nav-item" id="nav-reports">Reports</div>
+                <div class="nav-item" id="nav-analytics">Analytics</div>
                 <div class="nav-item" id="nav-ai">AI Predictions</div>
             </nav>
 
@@ -408,6 +410,167 @@
                     </div>
                 </div>
             </div>
+            <!-- Analytics Dashboard View -->
+            <div id="view-analytics" class="hidden w-full">
+                <div class="analytics-dashboard">
+                    <div class="section-header">
+                        <h2>Institutional Backtest Analytics</h2>
+                        <div class="export-group">
+                            <button class="btn btn-secondary" id="btn-export-csv">Export CSV</button>
+                            <button class="btn btn-secondary" id="btn-export-excel">Export Excel</button>
+                        </div>
+                    </div>
+
+                    <div class="tab-nav">
+                        <div class="tab-link active" data-analytics-tab="metrics">Metrics</div>
+                        <div class="tab-link" data-analytics-tab="equity">Equity Curve</div>
+                        <div class="tab-link" data-analytics-tab="journal">Trade Journal</div>
+                        <div class="tab-link" data-analytics-tab="ai">AI Insights</div>
+                    </div>
+
+                    <!-- Metrics Tab -->
+                    <div id="analytics-tab-metrics" class="analytics-tab-content">
+                        <div class="analytics-grid">
+                            <div class="analytics-card">
+                                <span class="label">Net Profit</span>
+                                <div class="value" id="adv-net-profit">$0.00</div>
+                                <div class="sub-value" id="adv-return-pct">0.00%</div>
+                            </div>
+                            <div class="analytics-card">
+                                <span class="label">Win Rate</span>
+                                <div class="value" id="adv-win-rate">0.00%</div>
+                                <div class="sub-value" id="adv-trades">0 Trades</div>
+                            </div>
+                            <div class="analytics-card">
+                                <span class="label">Profit Factor</span>
+                                <div class="value" id="adv-profit-factor">0.00</div>
+                                <div class="sub-value">Institutional Grade</div>
+                            </div>
+                            <div class="analytics-card">
+                                <span class="label">Sharpe Ratio</span>
+                                <div class="value" id="adv-sharpe">0.00</div>
+                                <div class="sub-value">Risk Adjusted</div>
+                            </div>
+                        </div>
+
+                        <div class="chart-section" style="margin-top: 24px;">
+                            <div class="chart-box">
+                                <h4>PnL Distribution</h4>
+                                <canvas id="chart-pnl-dist"></canvas>
+                            </div>
+                            <div class="chart-box">
+                                <h4>Exit Reasons</h4>
+                                <canvas id="chart-exits"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="metric-grid-3" style="margin-top: 24px;">
+                            <section class="card glass">
+                                <h3>Risk Metrics</h3>
+                                <table class="journal-table">
+                                    <tr><td>Max Drawdown</td> <td id="adv-max-dd">0.00%</td></tr>
+                                    <tr><td>Avg Drawdown</td> <td id="adv-avg-dd">0.00%</td></tr>
+                                    <tr><td>Recovery Factor</td> <td id="adv-recovery">0.00</td></tr>
+                                    <tr><td>Sortino Ratio</td> <td id="adv-sortino">0.00</td></tr>
+                                    <tr><td>Calmar Ratio</td> <td id="adv-calmar">0.00</td></tr>
+                                </table>
+                            </section>
+                            <section class="card glass">
+                                <h3>Efficiency</h3>
+                                <table class="journal-table">
+                                    <tr><td>Expectancy</td> <td id="adv-expectancy">0.00</td></tr>
+                                    <tr><td>Avg Trade Duration</td> <td id="adv-duration">0h</td></tr>
+                                    <tr><td>Consecutive Wins</td> <td id="adv-c-wins">0</td></tr>
+                                    <tr><td>Consecutive Losses</td> <td id="adv-c-losses">0</td></tr>
+                                    <tr><td>CAGR</td> <td id="adv-cagr">0.00%</td></tr>
+                                </table>
+                            </section>
+                            <section class="card glass">
+                                <h3>Profitability</h3>
+                                <table class="journal-table">
+                                    <tr><td>Gross Profit</td> <td id="adv-gross-profit">$0.00</td></tr>
+                                    <tr><td>Gross Loss</td> <td id="adv-gross-loss">$0.00</td></tr>
+                                    <tr><td>Largest Win</td> <td id="adv-max-win">$0.00</td></tr>
+                                    <tr><td>Largest Loss</td> <td id="adv-max-loss">$0.00</td></tr>
+                                    <tr><td>Avg Profit/Trade</td> <td id="adv-avg-profit">$0.00</td></tr>
+                                </table>
+                            </section>
+                        </div>
+                    </div>
+
+                    <!-- Equity Tab -->
+                    <div id="analytics-tab-equity" class="analytics-tab-content hidden">
+                        <div class="chart-box" style="height: 500px;">
+                            <h4>Cumulative Equity & Drawdown</h4>
+                            <canvas id="chart-equity-main"></canvas>
+                        </div>
+                        <div class="chart-section" style="margin-top: 24px;">
+                            <div class="chart-box">
+                                <h4>Monthly Performance</h4>
+                                <canvas id="chart-monthly"></canvas>
+                            </div>
+                            <div class="chart-box">
+                                <h4>Drawdown Intensity</h4>
+                                <canvas id="chart-drawdown-area"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Journal Tab -->
+                    <div id="analytics-tab-journal" class="analytics-tab-content hidden">
+                        <div class="trade-journal-container">
+                            <div class="journal-header">
+                                <h3>Detailed Trade Journal</h3>
+                                <div class="search-box">
+                                    <i>🔍</i>
+                                    <input type="text" id="journal-search" placeholder="Search trades (e.g. BUY, SL)...">
+                                </div>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="journal-table" id="advanced-journal-table">
+                                    <thead>
+                                        <tr>
+                                            <th>ID</th>
+                                            <th>Side</th>
+                                            <th>Entry</th>
+                                            <th>Exit</th>
+                                            <th>Size</th>
+                                            <th>PnL</th>
+                                            <th>Duration</th>
+                                            <th>Reason</th>
+                                            <th>AI Conf.</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <!-- Populated by JS -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- AI Insights Tab -->
+                    <div id="analytics-tab-ai" class="analytics-tab-content hidden">
+                        <div class="ai-insight-box">
+                            <div class="section-header">
+                                <h3>AI Prediction Effectiveness</h3>
+                                <span id="ai-accuracy-badge" class="badge">--% Accuracy</span>
+                            </div>
+                            <div class="chart-section">
+                                <div class="chart-box">
+                                    <h4>Accuracy by Confidence Bucket</h4>
+                                    <canvas id="chart-ai-buckets"></canvas>
+                                </div>
+                                <div class="chart-box">
+                                    <h4>Signal Distribution</h4>
+                                    <canvas id="chart-ai-dist"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- AI Predictions View -->
             <div id="view-ai" class="hidden w-full">
                 <div class="ai-container" style="padding: 24px;">
@@ -528,7 +691,7 @@
         <p>Analyzing BTCUSD Market...</p>
     </div>
 
-    <script src="static/script.js?v=1.0.2"></script>
+    <script src="static/script.js?v=1.0.3"></script>
 </body>
 
 </html>

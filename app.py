@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response, FileResponse
 from pydantic import BaseModel
 import os
 import importlib
@@ -41,11 +41,10 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    print(f"DEBUG: Request {request.method} {request.url.path}")
     response = await call_next(request)
-    if response.status_code == 404:
-        print(f"DEBUG: 404 for {request.url.path}")
     return response
+
+
 
 # State for live testing
 live_active = False
@@ -59,14 +58,11 @@ class BacktestRequest(BaseModel):
     end_date: str
     resolution: str = "1h"
 
-@app.get("/favicon.ico", include_in_schema=False)
-async def favicon():
-    return JSONResponse(status_code=204, content={})
 
-@app.get("/", response_class=HTMLResponse)
+
+@app.get("/", response_class=FileResponse)
 async def get_dashboard():
-    with open("static/index.html", "r") as f:
-        return f.read()
+    return FileResponse("static/index.html")
 
 @app.get("/api/strategies")
 async def list_strategies():
@@ -138,6 +134,42 @@ async def save_report(req: SaveReportRequest):
         print(f"ERROR saving report: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
 
+@app.get("/api/reports/{report_id}/export/{format}")
+async def export_report(report_id: int, format: str):
+    from fastapi.responses import StreamingResponse
+    import io
+
+    try:
+        data = report_manager.export_report(report_id, format)
+        if data is None:
+            return JSONResponse(status_code=404, content={"error": "Report not found or invalid format"})
+        
+        if format == 'csv':
+            if isinstance(data, str):
+                data = data.encode('utf-8')
+            
+            return StreamingResponse(
+                io.BytesIO(data),
+                media_type="text/csv",
+                headers={
+                    "Content-Disposition": f"attachment; filename=report_{report_id}.csv",
+                    "Content-Length": str(len(data))
+                }
+            )
+        elif format == 'excel':
+            return StreamingResponse(
+                io.BytesIO(data),
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={
+                    "Content-Disposition": f"attachment; filename=report_{report_id}.xlsx",
+                    "Content-Length": str(len(data))
+                }
+            )
+        return JSONResponse(status_code=400, content={"error": "Unsupported format"})
+    except Exception as e:
+        print(f"ERROR exporting report: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
 @app.get("/api/history")
 async def get_history(symbol: str = "BTCUSD", resolution: str = "1h"):
     # Resolution to seconds mapping
@@ -170,9 +202,6 @@ async def get_history(symbol: str = "BTCUSD", resolution: str = "1h"):
 @app.post("/api/backtest")
 async def run_backtest(req: BacktestRequest):
     # Load strategy
-    module_name = f"strategies.{req.strategy_name.lower()}"
-    # This is a bit brittle, we might need a better mapping
-    # Let's search for the class in all files in strategies/
     strategy_class = None
     for file in os.listdir("strategies"):
         if file.endswith(".py"):

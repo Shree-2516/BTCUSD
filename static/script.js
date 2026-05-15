@@ -7,6 +7,7 @@ let tradeMarkers = [];
 let lastBacktestReport = null;
 let activePriceLines = [];
 let insightsInitialLoad = false;
+let analyticsCharts = {}; // To store Chart.js instances
 
 document.addEventListener('DOMContentLoaded', () => {
     initChart();
@@ -305,6 +306,13 @@ function setupEventListeners() {
     document.getElementById('nav-insights').addEventListener('click', () => switchView('insights'));
     document.getElementById('nav-wallet').addEventListener('click', () => switchView('wallet'));
     document.getElementById('nav-reports').addEventListener('click', () => switchView('reports'));
+    document.getElementById('nav-analytics').addEventListener('click', () => {
+        if (!lastBacktestReport) {
+            alert("No backtest report available. Please run a backtest first.");
+            return;
+        }
+        switchView('analytics');
+    });
     document.getElementById('nav-ai').addEventListener('click', () => switchView('ai'));
     document.getElementById('btn-add-funds').addEventListener('click', () => switchView('wallet'));
 
@@ -364,6 +372,31 @@ function setupEventListeners() {
         if (maSeries) maSeries.applyOptions({ visible: e.target.checked });
     });
 
+    // Analytics Tab Navigation
+    document.querySelectorAll('[data-analytics-tab]').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('[data-analytics-tab]').forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            
+            const target = tab.dataset.analyticsTab;
+            document.querySelectorAll('.analytics-tab-content').forEach(c => c.classList.add('hidden'));
+            document.getElementById(`analytics-tab-${target}`).classList.remove('hidden');
+        });
+    });
+
+    // Export Triggers
+    document.getElementById('btn-export-csv').addEventListener('click', () => exportActiveReport('csv'));
+    document.getElementById('btn-export-excel').addEventListener('click', () => exportActiveReport('excel'));
+
+    // Journal Search
+    document.getElementById('journal-search').addEventListener('input', (e) => {
+        const query = e.target.value.toLowerCase();
+        const rows = document.querySelectorAll('#advanced-journal-table tbody tr');
+        rows.forEach(row => {
+            row.style.display = row.innerText.toLowerCase().includes(query) ? '' : 'none';
+        });
+    });
+
     // Initial trades load
     loadTradeHistory();
 }
@@ -382,7 +415,8 @@ function switchView(view) {
         'wallet': document.getElementById('view-wallet'),
         'reports': document.getElementById('view-reports'),
         'insights': document.getElementById('view-insights'),
-        'ai': document.getElementById('view-ai')
+        'ai': document.getElementById('view-ai'),
+        'analytics': document.getElementById('view-analytics')
     };
 
     Object.values(views).forEach(v => {
@@ -412,6 +446,10 @@ function switchView(view) {
         }
     } else if (view === 'ai') {
         loadAIInsights();
+    } else if (view === 'analytics') {
+        if (lastBacktestReport) {
+            renderDetailedReport(lastBacktestReport);
+        }
     }
 }
 
@@ -992,4 +1030,200 @@ function updateChartMarkers(activeTrades) {
     });
     
     candleSeries.setMarkers(newMarkers);
+}
+
+/**
+ * Institutional Reporting Engine - Frontend Data Binding
+ */
+function renderDetailedReport(report) {
+    console.log("DEBUG: Rendering Institutional Report", report);
+    
+    // 1. Populate Core Metrics
+    const m = report.metrics || {};
+    const netProfitEl = document.getElementById('adv-net-profit');
+    if (netProfitEl) {
+        netProfitEl.textContent = `$${m.net_profit?.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        netProfitEl.className = `value ${m.net_profit >= 0 ? 'pnl-up' : 'pnl-down'}`;
+    }
+    
+    const returnPctEl = document.getElementById('adv-return-pct');
+    if (returnPctEl) returnPctEl.textContent = m.return_pct;
+    
+    const winRateEl = document.getElementById('adv-win-rate');
+    if (winRateEl) winRateEl.textContent = m.win_rate;
+    
+    const tradesEl = document.getElementById('adv-trades');
+    if (tradesEl) tradesEl.textContent = `${m.total_trades} Trades`;
+    
+    const pfEl = document.getElementById('adv-profit-factor');
+    if (pfEl) pfEl.textContent = m.profit_factor;
+    
+    const sharpeEl = document.getElementById('adv-sharpe');
+    if (sharpeEl) sharpeEl.textContent = m.sharpe_ratio;
+    
+    // 2. Populate Detail Tables
+    const riskFields = {
+        'adv-max-dd': m.max_drawdown,
+        'adv-avg-dd': m.avg_drawdown,
+        'adv-recovery': m.recovery_factor,
+        'adv-sortino': m.sortino_ratio,
+        'adv-calmar': m.calmar_ratio
+    };
+    Object.entries(riskFields).forEach(([id, val]) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = val;
+    });
+    
+    const efficiencyFields = {
+        'adv-expectancy': m.expectancy?.toFixed(2),
+        'adv-duration': m.avg_trade_duration,
+        'adv-c-wins': m.consecutive_wins,
+        'adv-c-losses': m.consecutive_losses,
+        'adv-cagr': m.cagr
+    };
+    Object.entries(efficiencyFields).forEach(([id, val]) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = val;
+    });
+    
+    const profitFields = {
+        'adv-gross-profit': `$${m.gross_profit?.toLocaleString()}`,
+        'adv-gross-loss': `$${m.gross_loss?.toLocaleString()}`,
+        'adv-max-win': `$${m.largest_win?.toLocaleString()}`,
+        'adv-max-loss': `$${m.largest_loss?.toLocaleString()}`,
+        'adv-avg-profit': `$${m.avg_profit_per_trade?.toFixed(2)}`
+    };
+    Object.entries(profitFields).forEach(([id, val]) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = val;
+    });
+
+    // 3. Render Charts
+    renderAnalyticsCharts(report);
+
+    // 4. Populate Detailed Journal
+    renderDetailedJournal(report.trades || []);
+
+    // 5. AI Insights
+    const aiAccuracyBadge = document.getElementById('ai-accuracy-badge');
+    if (aiAccuracyBadge && report.ai_stats && report.ai_stats.accuracy_by_confidence) {
+        // Find best bucket
+        const buckets = report.ai_stats.accuracy_by_confidence;
+        const keys = Object.keys(buckets);
+        const bestKey = keys[keys.length - 1]; // Assume last is highest conf
+        const accuracy = buckets[bestKey];
+        if (accuracy !== undefined) {
+            aiAccuracyBadge.textContent = `${(accuracy * 100).toFixed(0)}% Accuracy`;
+        }
+    }
+}
+
+function renderAnalyticsCharts(report) {
+    const c = report.charts || {};
+    
+    // Destroy existing charts to prevent memory leaks
+    Object.values(analyticsCharts).forEach(chart => {
+        if (chart && typeof chart.destroy === 'function') chart.destroy();
+    });
+    analyticsCharts = {};
+
+    // PnL Distribution
+    const pnlDistCtx = document.getElementById('chart-pnl-dist');
+    if (pnlDistCtx && c.pnl_dist) {
+        analyticsCharts.pnlDist = new Chart(pnlDistCtx, {
+            type: 'bar',
+            data: c.pnl_dist,
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+        });
+    }
+
+    // Exit Reasons
+    const exitsCtx = document.getElementById('chart-exits');
+    if (exitsCtx && report.exits && report.exits.exit_reason_counts) {
+        const exitData = report.exits.exit_reason_counts;
+        analyticsCharts.exits = new Chart(exitsCtx, {
+            type: 'doughnut',
+            data: {
+                labels: Object.keys(exitData),
+                datasets: [{
+                    data: Object.values(exitData),
+                    backgroundColor: ['#3b82f6', '#ef4444', '#22c55e', '#eab308', '#8b5cf6']
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+    }
+
+    // Main Equity Chart
+    const equityCtx = document.getElementById('chart-equity-main');
+    if (equityCtx && c.equity_curve) {
+        analyticsCharts.equity = new Chart(equityCtx, {
+            type: 'line',
+            data: c.equity_curve,
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { ticks: { maxTicksLimit: 10 } },
+                    y: { grid: { color: 'rgba(255,255,255,0.05)' } }
+                }
+            }
+        });
+    }
+
+    // Monthly Bar Chart
+    const monthlyCtx = document.getElementById('chart-monthly');
+    if (monthlyCtx && c.monthly_pnl) {
+        analyticsCharts.monthly = new Chart(monthlyCtx, {
+            type: 'bar',
+            data: c.monthly_pnl,
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+    }
+    
+    // Drawdown Area Chart
+    const ddCtx = document.getElementById('chart-drawdown-area');
+    if (ddCtx && c.drawdown) {
+        analyticsCharts.drawdown = new Chart(ddCtx, {
+            type: 'line',
+            data: c.drawdown,
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                fill: true,
+                scales: { y: { reverse: true } }
+            }
+        });
+    }
+}
+
+function renderDetailedJournal(trades) {
+    const tbody = document.querySelector('#advanced-journal-table tbody');
+    if (!tbody) return;
+    
+    tbody.innerHTML = trades.map((t, i) => `
+        <tr>
+            <td>#${i+1}</td>
+            <td class="${t.type === 'BUY' ? 'pnl-up' : 'pnl-down'}">${t.type}</td>
+            <td>${t.entry_price.toFixed(2)}</td>
+            <td>${t.exit_price?.toFixed(2) || '--'}</td>
+            <td>${t.size}</td>
+            <td class="${t.pnl >= 0 ? 'pnl-up' : 'pnl-down'}">${t.pnl.toFixed(2)}</td>
+            <td>${(t.duration / 3600).toFixed(1)}h</td>
+            <td>${t.reason || 'Signal'}</td>
+            <td>${t.ai_metadata?.confidence ? t.ai_metadata.confidence + '%' : '--'}</td>
+        </tr>
+    `).join('');
+}
+
+async function exportActiveReport(format) {
+    if (!lastBacktestReport) return;
+    
+    const reportId = lastBacktestReport.id;
+    if (!reportId) {
+        alert("Please SAVE the report first to enable professional exports.");
+        return;
+    }
+
+    window.location.href = `/api/reports/${reportId}/export/${format}`;
 }

@@ -45,6 +45,7 @@ class LayeredPredictionEngine:
     def _get_48h_accuracy(self):
         """Calculates real win rate of closed trades in the last 48 hours."""
         try:
+            from datetime import datetime, timedelta
             from database.db import SessionLocal, Trade
             from sqlalchemy import and_
             db = SessionLocal()
