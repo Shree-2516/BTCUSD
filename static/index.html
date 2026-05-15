@@ -5,12 +5,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BTCUSD Dashboard - DEBUG</title>
-    <link rel="stylesheet" href="static/style.css?v=1.0.2">
+    <link rel="stylesheet" href="static/style.css?v=1.0.5">
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Outfit:wght@400;600;800&display=swap"
         rel="stylesheet">
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 
 <body>
@@ -453,14 +453,18 @@
                             </div>
                         </div>
 
-                        <div class="chart-section" style="margin-top: 24px;">
-                            <div class="chart-box">
+                        <div class="chart-section chart-section--metrics" style="margin-top: 24px;">
+                            <div class="chart-box chart-box--analytics">
                                 <h4>PnL Distribution</h4>
-                                <canvas id="chart-pnl-dist"></canvas>
+                                <div class="analytics-chart-canvas-wrap">
+                                    <canvas id="chart-pnl-dist"></canvas>
+                                </div>
                             </div>
-                            <div class="chart-box">
+                            <div class="chart-box chart-box--analytics">
                                 <h4>Exit Reasons</h4>
-                                <canvas id="chart-exits"></canvas>
+                                <div class="analytics-chart-canvas-wrap">
+                                    <canvas id="chart-exits"></canvas>
+                                </div>
                             </div>
                         </div>
 
@@ -691,7 +695,7 @@
         <p>Analyzing BTCUSD Market...</p>
     </div>
 
-    <script src="static/script.js?v=1.0.3"></script>
+    <script src="static/script.js?v=1.0.8"></script>
 </body>
 
 </html>

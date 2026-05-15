@@ -226,7 +226,12 @@ async def run_backtest(req: BacktestRequest):
 
     engine = BacktestEngine(initial_capital=req.initial_capital)
     report = engine.run(strategy, df)
-    
+
+    if isinstance(report, dict) and report.get("error") is None:
+        params = report.setdefault("parameters", {})
+        params["start_date"] = req.start_date
+        params["end_date"] = req.end_date
+
     return report
 
 @app.get("/api/trade/active")

@@ -3,16 +3,34 @@ import numpy as np
 from datetime import datetime
 import os
 import json
+import math
+import numbers
 
-import pandas as pd
-import numpy as np
-from datetime import datetime
-import os
-import json
+
+def _json_finite(obj):
+    """Replace NaN/inf so JSON and browsers never see non-finite numbers."""
+    if obj is None:
+        return None
+    if isinstance(obj, dict):
+        return {k: _json_finite(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_finite(v) for v in obj]
+    if isinstance(obj, bool):
+        return obj
+    if isinstance(obj, (str, int)):
+        return obj
+    if isinstance(obj, numbers.Real):
+        x = float(obj)
+        return x if math.isfinite(x) else None
+    try:
+        x = float(obj)
+        return x if math.isfinite(x) else None
+    except (TypeError, ValueError):
+        return obj
+
 
 from backtest.portfolio import Portfolio
 from backtest.execution import ExecutionHandler
-from backtest.metrics import MetricsCalculator
 from backtest.slippage import FixedSlippage
 
 class BacktestEngine:
@@ -202,6 +220,8 @@ class BacktestEngine:
             "performance": performance,
             "parameters": parameters
         }
+
+        report = _json_finite(report)
 
         # Save report to file (Incremental/Safe)
         os.makedirs("report/backtest_reports", exist_ok=True)

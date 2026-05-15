@@ -4,3 +4,42 @@
 2026-05-15 10:23:05 | INFO     | BTCUSD_TRADING | Loaded legacy direction model.
 2026-05-15 10:23:05 | INFO     | BTCUSD_TRADING | Loaded legacy volatility model.
 2026-05-15 10:23:05 | WARNING  | BTCUSD_TRADING | LightGBM not installed, skipping model loading.
+2026-05-15 10:34:52 | INFO     | BTCUSD_TRADING | Loaded legacy direction model.
+2026-05-15 10:34:52 | INFO     | BTCUSD_TRADING | Loaded legacy volatility model.
+2026-05-15 10:34:52 | WARNING  | BTCUSD_TRADING | LightGBM not installed, skipping model loading.
+2026-05-15 10:34:55 | INFO     | BTCUSD_TRADING | Loaded legacy direction model.
+2026-05-15 10:34:55 | INFO     | BTCUSD_TRADING | Loaded legacy volatility model.
+2026-05-15 10:34:55 | WARNING  | BTCUSD_TRADING | LightGBM not installed, skipping model loading.
+2026-05-15 10:41:44 | INFO     | BTCUSD_TRADING | Loaded legacy direction model.
+2026-05-15 10:41:44 | INFO     | BTCUSD_TRADING | Loaded legacy volatility model.
+2026-05-15 10:41:44 | WARNING  | BTCUSD_TRADING | LightGBM not installed, skipping model loading.
+2026-05-15 10:41:54 | INFO     | BTCUSD_TRADING | Loaded legacy direction model.
+2026-05-15 10:41:54 | INFO     | BTCUSD_TRADING | Loaded legacy volatility model.
+2026-05-15 10:41:54 | WARNING  | BTCUSD_TRADING | LightGBM not installed, skipping model loading.
+2026-05-15 10:42:16 | INFO     | BTCUSD_TRADING | Loaded legacy direction model.
+2026-05-15 10:42:16 | INFO     | BTCUSD_TRADING | Loaded legacy volatility model.
+2026-05-15 10:42:16 | WARNING  | BTCUSD_TRADING | LightGBM not installed, skipping model loading.
+2026-05-15 10:42:31 | INFO     | BTCUSD_TRADING | Loaded legacy direction model.
+2026-05-15 10:42:31 | INFO     | BTCUSD_TRADING | Loaded legacy volatility model.
+2026-05-15 10:42:31 | WARNING  | BTCUSD_TRADING | LightGBM not installed, skipping model loading.
+2026-05-15 10:45:41 | INFO     | BTCUSD_TRADING | Loaded legacy direction model.
+2026-05-15 10:45:41 | INFO     | BTCUSD_TRADING | Loaded legacy volatility model.
+2026-05-15 10:45:41 | WARNING  | BTCUSD_TRADING | LightGBM not installed, skipping model loading.
+2026-05-15 10:45:47 | INFO     | BTCUSD_TRADING | Loaded legacy direction model.
+2026-05-15 10:45:47 | INFO     | BTCUSD_TRADING | Loaded legacy volatility model.
+2026-05-15 10:45:47 | WARNING  | BTCUSD_TRADING | LightGBM not installed, skipping model loading.
+2026-05-15 10:46:08 | INFO     | BTCUSD_TRADING | Loaded legacy direction model.
+2026-05-15 10:46:08 | INFO     | BTCUSD_TRADING | Loaded legacy volatility model.
+2026-05-15 10:46:08 | WARNING  | BTCUSD_TRADING | LightGBM not installed, skipping model loading.
+2026-05-15 10:48:33 | INFO     | BTCUSD_TRADING | Loaded legacy direction model.
+2026-05-15 10:48:33 | INFO     | BTCUSD_TRADING | Loaded legacy volatility model.
+2026-05-15 10:48:33 | WARNING  | BTCUSD_TRADING | LightGBM not installed, skipping model loading.
+2026-05-15 10:48:37 | INFO     | BTCUSD_TRADING | Loaded legacy direction model.
+2026-05-15 10:48:37 | INFO     | BTCUSD_TRADING | Loaded legacy volatility model.
+2026-05-15 10:48:37 | WARNING  | BTCUSD_TRADING | LightGBM not installed, skipping model loading.
+2026-05-15 10:59:38 | INFO     | BTCUSD_TRADING | Loaded legacy direction model.
+2026-05-15 10:59:38 | INFO     | BTCUSD_TRADING | Loaded legacy volatility model.
+2026-05-15 10:59:38 | WARNING  | BTCUSD_TRADING | LightGBM not installed, skipping model loading.
+2026-05-15 10:59:41 | INFO     | BTCUSD_TRADING | Loaded legacy direction model.
+2026-05-15 10:59:41 | INFO     | BTCUSD_TRADING | Loaded legacy volatility model.
+2026-05-15 10:59:41 | WARNING  | BTCUSD_TRADING | LightGBM not installed, skipping model loading.

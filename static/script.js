@@ -111,13 +111,19 @@ async function loadWallet() {
     try {
         const res = await fetch('/api/wallet');
         const data = await res.json();
-        document.getElementById('wallet-balance').textContent = data.balance.toFixed(2);
-        
+        const bal = Number(data.balance);
+        const avail = Number(data.available_balance);
+        const balTxt = Number.isFinite(bal) ? bal.toFixed(2) : '--';
+        const availTxt = Number.isFinite(avail) ? avail.toFixed(2) : '--';
+
+        const wb = document.getElementById('wallet-balance');
+        if (wb) wb.textContent = balTxt;
+
         const pageBalance = document.getElementById('wallet-page-balance');
-        if (pageBalance) pageBalance.textContent = data.balance.toFixed(2);
-        
+        if (pageBalance) pageBalance.textContent = balTxt;
+
         const availBalance = document.getElementById('wallet-available-balance');
-        if (availBalance) availBalance.textContent = data.available_balance.toFixed(2);
+        if (availBalance) availBalance.textContent = availTxt;
     } catch (err) {
         console.error("Error loading wallet:", err);
     }
@@ -138,8 +144,8 @@ async function loadWalletHistory() {
                 row.innerHTML = `
                     <td>${t.timestamp}</td>
                     <td style="color: ${t.type === 'CREDIT' ? 'var(--success)' : 'var(--danger)'}">${t.type}</td>
-                    <td>${t.amount.toFixed(2)}</td>
-                    <td>${t.balance_after.toFixed(2)}</td>
+                    <td>${Number.isFinite(Number(t.amount)) ? Number(t.amount).toFixed(2) : '--'}</td>
+                    <td>${Number.isFinite(Number(t.balance_after)) ? Number(t.balance_after).toFixed(2) : '--'}</td>
                     <td>${t.reason}</td>
                 `;
                 tbody.appendChild(row);
@@ -165,13 +171,17 @@ async function loadReports() {
         if (Array.isArray(reports)) {
             reports.forEach(r => {
                 const row = document.createElement('tr');
+                const np = Number(r.net_pnl);
+                const pnlStr = Number.isFinite(np) ? np.toFixed(2) : '--';
+                const wr = Number(r.win_rate);
+                const wrStr = Number.isFinite(wr) ? `${wr.toFixed(2)}%` : (r.win_rate != null ? String(r.win_rate) : '--');
                 row.innerHTML = `
                     <td>${r.created_at}</td>
                     <td>${r.strategy_name}</td>
-                    <td class="${r.net_pnl >= 0 ? 'pnl-up' : 'pnl-down'}">${r.net_pnl.toFixed(2)}</td>
-                    <td>${r.win_rate}%</td>
-                    <td>${r.total_trades}</td>
-                    <td>${r.max_drawdown || '--'}</td>
+                    <td class="${Number.isFinite(np) && np >= 0 ? 'pnl-up' : 'pnl-down'}">${pnlStr}</td>
+                    <td>${wrStr}</td>
+                    <td>${r.total_trades != null ? r.total_trades : '--'}</td>
+                    <td>${r.max_drawdown != null ? r.max_drawdown : '--'}</td>
                     <td><button class="btn btn-secondary" onclick="viewReportDetails(${r.id})">Open</button></td>
                 `;
                 tbody.appendChild(row);
@@ -192,7 +202,12 @@ async function viewReportDetails(reportId) {
     try {
         const res = await fetch(`/api/reports/${reportId}`);
         const report = await res.json();
-        displayReport(report);
+        try {
+            displayReport(report);
+        } catch (e) {
+            console.error('displayReport', e);
+            alert('Report loaded but summary display failed: ' + (e.message || e));
+        }
         switchView('dashboard');
     } catch (err) {
         alert("Failed to load report details");
@@ -233,11 +248,13 @@ function updateTickerUI(msg) {
     priceEl.textContent = `$${lastPrice.toLocaleString()}`;
 
     const changeEl = document.getElementById('ticker-change');
-    if (changeEl && data.mark_change_24h !== undefined) {
-        const changePct = parseFloat(data.mark_change_24h);
-        const sign = changePct >= 0 ? '+' : '';
-        changeEl.textContent = `${sign}${changePct.toFixed(2)}%`;
-        changeEl.className = `change ${changePct >= 0 ? 'pnl-up' : 'pnl-down'}`;
+    if (changeEl && data.mark_change_24h !== undefined && data.mark_change_24h !== null) {
+        const changePct = Number(data.mark_change_24h);
+        if (Number.isFinite(changePct)) {
+            const sign = changePct >= 0 ? '+' : '';
+            changeEl.textContent = `${sign}${changePct.toFixed(2)}%`;
+            changeEl.className = `change ${changePct >= 0 ? 'pnl-up' : 'pnl-down'}`;
+        }
     }
     
     // Update chart if live
@@ -273,11 +290,11 @@ function handleLiveEvent(event) {
     if (tbody) {
         const row = document.createElement('tr');
         const pnl = trade.pnl || 0;
-        row.innerHTML = `
-            <td>${trade.type}</td>
-            <td>${trade.price ? trade.price.toFixed(2) : '--'}</td>
-            <td>${trade.exit_price ? trade.exit_price.toFixed(2) : '--'}</td>
-            <td class="${pnl >= 0 ? 'pnl-up' : 'pnl-down'}">${pnl.toFixed(2)}</td>
+            row.innerHTML = `
+                <td>${trade.type}</td>
+                <td>${fmtPrice(trade.price)}</td>
+                <td>${trade.exit_price != null && trade.exit_price !== '' ? fmtPrice(trade.exit_price) : '--'}</td>
+                <td class="${pnl >= 0 ? 'pnl-up' : 'pnl-down'}">${fmtPnl(trade.pnl)}</td>
             <td>${new Date().toLocaleDateString('en-IN', {timeZone: 'Asia/Kolkata'})}</td>
             <td>${new Date().toLocaleTimeString('en-IN', {timeZone: 'Asia/Kolkata', hour12: false})}</td>
             <td>${trade.exit_price ? new Date().toLocaleTimeString('en-IN', {timeZone: 'Asia/Kolkata', hour12: false}) : '--'}</td>
@@ -381,6 +398,7 @@ function setupEventListeners() {
             const target = tab.dataset.analyticsTab;
             document.querySelectorAll('.analytics-tab-content').forEach(c => c.classList.add('hidden'));
             document.getElementById(`analytics-tab-${target}`).classList.remove('hidden');
+            resizeAnalyticsCharts();
         });
     });
 
@@ -448,7 +466,12 @@ function switchView(view) {
         loadAIInsights();
     } else if (view === 'analytics') {
         if (lastBacktestReport) {
-            renderDetailedReport(lastBacktestReport);
+            try {
+                renderDetailedReport(lastBacktestReport);
+                resizeAnalyticsCharts();
+            } catch (e) {
+                console.error('Analytics view failed', e);
+            }
         }
     }
 }
@@ -587,12 +610,35 @@ async function runBacktest() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(params)
         });
-        const report = await res.json();
+        const report = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            const msg = report.detail || report.error || report.message || `HTTP ${res.status}`;
+            const detailStr = typeof msg === 'string' ? msg : (Array.isArray(msg) ? msg.map(m => m.msg || JSON.stringify(m)).join('; ') : JSON.stringify(msg));
+            throw new Error(detailStr || 'Request failed');
+        }
         if (report.error) throw new Error(report.error);
-        
+
         lastBacktestReport = report;
-        displayReport(report);
-        document.getElementById('save-report-btn').classList.remove('hidden');
+
+        try {
+            displayReport(report);
+        } catch (e) {
+            console.error('displayReport failed', e);
+            throw new Error(e.message || 'Failed to update performance summary');
+        }
+
+        try {
+            const analyticsView = document.getElementById('view-analytics');
+            if (analyticsView && !analyticsView.classList.contains('hidden')) {
+                renderDetailedReport(report);
+                resizeAnalyticsCharts();
+            }
+        } catch (e) {
+            console.error('Analytics render failed (backtest data is still saved in memory)', e);
+        }
+
+        const saveBtn = document.getElementById('save-report-btn');
+        if (saveBtn) saveBtn.classList.remove('hidden');
     } catch (err) {
         alert('Backtest Failed: ' + err.message);
     } finally {
@@ -600,24 +646,89 @@ async function runBacktest() {
     }
 }
 
+function fmtPrice(n) {
+    const x = Number(n);
+    return Number.isFinite(x) ? x.toFixed(2) : '--';
+}
+
+function fmtPnl(n) {
+    const x = Number(n);
+    return Number.isFinite(x) ? x.toFixed(2) : '--';
+}
+
+/** Ensure Chart.js line/bar charts get equal-length labels + finite numeric (or null) points. */
+function sanitizeChartJsCartesianData(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const labels = Array.isArray(raw.labels) ? raw.labels.map(l => (l == null ? '' : String(l))) : [];
+    if (!labels.length) return null;
+    const datasets = (raw.datasets || []).map(ds => {
+        const dataIn = Array.isArray(ds.data) ? ds.data : [];
+        const data = labels.map((_, i) => {
+            const v = dataIn[i];
+            if (v === null || v === undefined || v === '') return null;
+            const n = Number(v);
+            return Number.isFinite(n) ? n : null;
+        });
+        return { ...ds, data };
+    });
+    return { ...raw, labels, datasets };
+}
+
+/** Normalize API report (legacy flat fields vs current metrics/performance). */
+function getBacktestSummary(report) {
+    if (!report || typeof report !== 'object') {
+        return { netPnl: 0, winRate: '--', totalTrades: 0, maxDrawdown: '--' };
+    }
+    const perf = report.performance || {};
+    const m = report.metrics || {};
+    const netPnl = perf.net_pnl != null ? Number(perf.net_pnl) : (m.net_profit != null ? Number(m.net_profit) : Number(report.net_pnl));
+    const winRate = m.win_rate != null ? m.win_rate
+        : (perf.win_rate != null ? `${Number(perf.win_rate).toFixed(2)}%` : (report.win_rate != null ? String(report.win_rate) : '--'));
+    const totalTrades = perf.total_trades != null ? perf.total_trades
+        : (m.total_trades != null ? m.total_trades : (report.total_trades != null ? report.total_trades : 0));
+    const maxDd = m.max_drawdown != null ? m.max_drawdown
+        : (perf.max_drawdown != null ? `${Number(perf.max_drawdown).toFixed(2)}%` : (report.max_drawdown != null ? String(report.max_drawdown) : '--'));
+    return {
+        netPnl: Number.isFinite(netPnl) ? netPnl : 0,
+        winRate,
+        totalTrades,
+        maxDrawdown: maxDd
+    };
+}
+
 function displayReport(report) {
-    document.getElementById('stat-pnl').textContent = report.net_pnl.toFixed(2);
-    document.getElementById('stat-pnl').className = report.net_pnl >= 0 ? 'pnl-up' : 'pnl-down';
-    document.getElementById('stat-winrate').textContent = report.win_rate;
-    document.getElementById('stat-trades').textContent = report.total_trades;
-    document.getElementById('stat-drawdown').textContent = report.max_drawdown;
+    if (!report || typeof report !== 'object') {
+        console.error('displayReport: invalid report', report);
+        return;
+    }
+    const s = getBacktestSummary(report);
+    const net = Number.isFinite(Number(s.netPnl)) ? Number(s.netPnl) : 0;
+
+    const pnlEl = document.getElementById('stat-pnl');
+    if (pnlEl) {
+        pnlEl.textContent = net.toFixed(2);
+        pnlEl.className = net >= 0 ? 'pnl-up' : 'pnl-down';
+    }
+    const wrEl = document.getElementById('stat-winrate');
+    if (wrEl) wrEl.textContent = s.winRate ?? '--';
+    const trEl = document.getElementById('stat-trades');
+    if (trEl) trEl.textContent = s.totalTrades ?? '--';
+    const ddEl = document.getElementById('stat-drawdown');
+    if (ddEl) ddEl.textContent = s.maxDrawdown ?? '--';
 
     const tbody = document.querySelector('#trade-table tbody');
+    if (!tbody) return;
     tbody.innerHTML = '';
     if (report.trades) {
         report.trades.forEach(t => {
             const row = document.createElement('tr');
-            const pnl = t.pnl || 0;
+            const pnl = Number(t.pnl);
+            const pnlNum = Number.isFinite(pnl) ? pnl : 0;
             row.innerHTML = `
                 <td>${t.type}</td>
-                <td>${t.entry_price.toFixed(2)}</td>
-                <td>${t.exit_price ? t.exit_price.toFixed(2) : '--'}</td>
-                <td class="${pnl >= 0 ? 'pnl-up' : 'pnl-down'}">${pnl.toFixed(2)}</td>
+                <td>${fmtPrice(t.entry_price)}</td>
+                <td>${t.exit_price != null && t.exit_price !== '' ? fmtPrice(t.exit_price) : '--'}</td>
+                <td class="${pnlNum >= 0 ? 'pnl-up' : 'pnl-down'}">${fmtPnl(t.pnl)}</td>
                 <td>${new Date(t.entry_time).toLocaleDateString('en-IN', {timeZone: 'Asia/Kolkata'})}</td>
                 <td>${new Date(t.entry_time).toLocaleTimeString('en-IN', {timeZone: 'Asia/Kolkata', hour12: false})}</td>
                 <td>${t.exit_time ? new Date(t.exit_time).toLocaleTimeString('en-IN', {timeZone: 'Asia/Kolkata', hour12: false}) : '--'}</td>
@@ -760,17 +871,21 @@ function renderActiveTrades(trades) {
         return;
     }
     
-    container.innerHTML = trades.map(t => `
+    container.innerHTML = trades.map(t => {
+        const u = Number(t.unrealized_pnl);
+        const uTxt = Number.isFinite(u) ? `${u >= 0 ? '+' : ''}${u.toFixed(2)}` : '--';
+        const uCls = Number.isFinite(u) ? (u >= 0 ? 'pnl-up' : 'pnl-down') : '';
+        return `
         <div class="trade-card">
             <div class="trade-main">
                 <div class="trade-header">
-                    <span class="side-badge side-${t.type.toLowerCase()}">${t.type}</span>
+                    <span class="side-badge side-${(t.type || '').toLowerCase()}">${t.type}</span>
                     <strong>${t.symbol}</strong>
                     <small>${t.trade_type}</small>
                 </div>
                 <div class="trade-details">
-                    <span>Entry: ${t.entry_price.toFixed(2)}</span>
-                    <span>Size: ${t.size}</span>
+                    <span>Entry: ${fmtPrice(t.entry_price)}</span>
+                    <span>Size: ${t.size != null ? t.size : '--'}</span>
                 </div>
                 ${t.stop_loss || t.take_profit ? `
                     <div class="trade-details">
@@ -780,12 +895,10 @@ function renderActiveTrades(trades) {
                 ` : ''}
             </div>
             <div class="pnl-container">
-                <div class="live-pnl ${t.unrealized_pnl >= 0 ? 'pnl-up' : 'pnl-down'}">
-                    ${t.unrealized_pnl >= 0 ? '+' : ''}${t.unrealized_pnl.toFixed(2)}
-                </div>
+                <div class="live-pnl ${uCls}">${uTxt}</div>
             </div>
-        </div>
-    `).join('');
+        </div>`;
+    }).join('');
 }
 
 async function loadTradeHistory() {
@@ -801,9 +914,9 @@ async function loadTradeHistory() {
             const row = document.createElement('tr');
             row.innerHTML = `
                 <td>${t.type}</td>
-                <td>${t.entry_price.toFixed(2)}</td>
-                <td>${t.exit_price ? t.exit_price.toFixed(2) : '--'}</td>
-                <td class="${t.pnl >= 0 ? 'pnl-up' : 'pnl-down'}">${t.pnl.toFixed(2)}</td>
+                <td>${fmtPrice(t.entry_price)}</td>
+                <td>${t.exit_price != null && t.exit_price !== '' ? fmtPrice(t.exit_price) : '--'}</td>
+                <td class="${(Number.isFinite(Number(t.pnl)) ? Number(t.pnl) : 0) >= 0 ? 'pnl-up' : 'pnl-down'}">${fmtPnl(t.pnl)}</td>
                 <td>${new Date(t.entry_time).toLocaleDateString('en-IN', {timeZone: 'Asia/Kolkata'})}</td>
                 <td>${new Date(t.entry_time).toLocaleTimeString('en-IN', {timeZone: 'Asia/Kolkata', hour12: false})}</td>
                 <td>${t.exit_time ? new Date(t.exit_time).toLocaleTimeString('en-IN', {timeZone: 'Asia/Kolkata', hour12: false}) : '--'}</td>
@@ -827,14 +940,16 @@ function updateInsightsTicker(msg) {
         if (priceEl) priceEl.textContent = `$${lastPrice.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
 
         const changeEl = document.getElementById('insights-live-change');
-        if (changeEl && data.mark_change_24h !== undefined) {
-            const changePct = parseFloat(data.mark_change_24h);
-            const openPrice = parseFloat(data.open || lastPrice);
-            const changeAbs = lastPrice - openPrice;
-            const sign = changePct >= 0 ? '+' : '';
-            
-            changeEl.textContent = `${sign}${changePct.toFixed(2)}% (${sign}$${Math.abs(changeAbs).toLocaleString(undefined, {minimumFractionDigits: 2})})`;
-            changeEl.className = `change-val ${changePct >= 0 ? 'pnl-up' : 'pnl-down'}`;
+        if (changeEl && data.mark_change_24h !== undefined && data.mark_change_24h !== null) {
+            const changePct = Number(data.mark_change_24h);
+            if (Number.isFinite(changePct)) {
+                const openPrice = Number(data.open || lastPrice);
+                const changeAbs = lastPrice - (Number.isFinite(openPrice) ? openPrice : lastPrice);
+                const sign = changePct >= 0 ? '+' : '';
+
+                changeEl.textContent = `${sign}${changePct.toFixed(2)}% (${sign}$${Math.abs(changeAbs).toLocaleString(undefined, {minimumFractionDigits: 2})})`;
+                changeEl.className = `change-val ${changePct >= 0 ? 'pnl-up' : 'pnl-down'}`;
+            }
         }
 
         // Update insights chart if it exists and is visible
@@ -989,7 +1104,7 @@ function calculatePL() {
     document.getElementById('calc-current-val').textContent = `$${currentVal.toLocaleString(undefined, {maximumFractionDigits: 2})}`;
     document.getElementById('calc-net-pnl').textContent = `$${pnl.toLocaleString(undefined, {maximumFractionDigits: 2})}`;
     document.getElementById('calc-net-pnl').className = pnl >= 0 ? 'pnl-up' : 'pnl-down';
-    document.getElementById('calc-roi').textContent = `${roi >= 0 ? '+' : ''}${roi.toFixed(2)}%`;
+    document.getElementById('calc-roi').textContent = `${roi >= 0 ? '+' : ''}${Number.isFinite(roi) ? roi.toFixed(2) : '--'}%`;
     document.getElementById('calc-roi').className = roi >= 0 ? 'pnl-up' : 'pnl-down';
 }
 
@@ -1004,64 +1119,96 @@ function updateChartMarkers(activeTrades) {
     const resolutionSeconds = resMap[currentResolution] || 3600;
 
     // Convert active trades to markers
-    const newMarkers = activeTrades.map(t => {
+    const newMarkers = [];
+    activeTrades.forEach(t => {
+        const entryPx = Number(t.entry_price);
+        if (!Number.isFinite(entryPx) || entryPx <= 0) return;
+
         const exactEntryTime = Math.floor(new Date(t.entry_time).getTime() / 1000);
-        // Align marker with the candle start time for precise placement
+        if (!Number.isFinite(exactEntryTime)) return;
+
         const candleAlignedTime = Math.floor(exactEntryTime / resolutionSeconds) * resolutionSeconds;
-        
-        // Add exact price line
+
         const priceLine = candleSeries.createPriceLine({
-            price: t.entry_price,
+            price: entryPx,
             color: t.type === 'BUY' ? '#22c55e' : '#ef4444',
             lineWidth: 2,
             lineStyle: LightweightCharts.LineStyle.Dashed,
             axisLabelVisible: true,
-            title: `${t.type} @ ${t.entry_price.toFixed(2)}`,
+            title: `${t.type} @ ${entryPx.toFixed(2)}`,
         });
         activePriceLines.push(priceLine);
 
-        return {
+        newMarkers.push({
             time: candleAlignedTime,
             position: t.type === 'BUY' ? 'belowBar' : 'aboveBar',
             color: t.type === 'BUY' ? '#22c55e' : '#ef4444',
             shape: t.type === 'BUY' ? 'arrowUp' : 'arrowDown',
             text: `${t.type} Entry`
-        };
+        });
     });
-    
+
     candleSeries.setMarkers(newMarkers);
 }
+
+function resizeAnalyticsCharts() {
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            Object.values(analyticsCharts).forEach(chart => {
+                if (chart && typeof chart.resize === 'function') {
+                    try {
+                        chart.resize();
+                    } catch (e) {
+                        console.warn('Chart resize skipped', e);
+                    }
+                }
+            });
+        });
+    });
+}
+
+const _chartAxisLight = {
+    ticks: { color: '#94a3b8' },
+    grid: { color: 'rgba(255,255,255,0.06)' },
+    border: { color: 'rgba(255,255,255,0.1)' }
+};
 
 /**
  * Institutional Reporting Engine - Frontend Data Binding
  */
 function renderDetailedReport(report) {
+    if (!report || typeof report !== 'object') {
+        console.warn('renderDetailedReport: no report');
+        return;
+    }
     console.log("DEBUG: Rendering Institutional Report", report);
-    
-    // 1. Populate Core Metrics
+
+    const perf = report.performance || {};
     const m = report.metrics || {};
+    const netProfitRaw = Number(m.net_profit ?? perf.net_pnl ?? 0);
+    const netProfit = Number.isFinite(netProfitRaw) ? netProfitRaw : 0;
+
     const netProfitEl = document.getElementById('adv-net-profit');
     if (netProfitEl) {
-        netProfitEl.textContent = `$${m.net_profit?.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-        netProfitEl.className = `value ${m.net_profit >= 0 ? 'pnl-up' : 'pnl-down'}`;
+        netProfitEl.textContent = `$${netProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        netProfitEl.className = `value ${netProfit >= 0 ? 'pnl-up' : 'pnl-down'}`;
     }
-    
+
     const returnPctEl = document.getElementById('adv-return-pct');
-    if (returnPctEl) returnPctEl.textContent = m.return_pct;
-    
+    if (returnPctEl) returnPctEl.textContent = m.return_pct ?? '--';
+
     const winRateEl = document.getElementById('adv-win-rate');
-    if (winRateEl) winRateEl.textContent = m.win_rate;
-    
+    if (winRateEl) winRateEl.textContent = m.win_rate ?? '--';
+
     const tradesEl = document.getElementById('adv-trades');
-    if (tradesEl) tradesEl.textContent = `${m.total_trades} Trades`;
-    
+    if (tradesEl) tradesEl.textContent = `${m.total_trades ?? 0} Trades`;
+
     const pfEl = document.getElementById('adv-profit-factor');
-    if (pfEl) pfEl.textContent = m.profit_factor;
-    
+    if (pfEl) pfEl.textContent = m.profit_factor ?? '--';
+
     const sharpeEl = document.getElementById('adv-sharpe');
-    if (sharpeEl) sharpeEl.textContent = m.sharpe_ratio;
-    
-    // 2. Populate Detail Tables
+    if (sharpeEl) sharpeEl.textContent = m.sharpe_ratio ?? '--';
+
     const riskFields = {
         'adv-max-dd': m.max_drawdown,
         'adv-avg-dd': m.avg_drawdown,
@@ -1071,11 +1218,12 @@ function renderDetailedReport(report) {
     };
     Object.entries(riskFields).forEach(([id, val]) => {
         const el = document.getElementById(id);
-        if (el) el.textContent = val;
+        if (el) el.textContent = val != null ? String(val) : '--';
     });
-    
+
+    const exp = m.expectancy;
     const efficiencyFields = {
-        'adv-expectancy': m.expectancy?.toFixed(2),
+        'adv-expectancy': exp != null && Number.isFinite(Number(exp)) ? Number(exp).toFixed(2) : '--',
         'adv-duration': m.avg_trade_duration,
         'adv-c-wins': m.consecutive_wins,
         'adv-c-losses': m.consecutive_losses,
@@ -1083,137 +1231,337 @@ function renderDetailedReport(report) {
     };
     Object.entries(efficiencyFields).forEach(([id, val]) => {
         const el = document.getElementById(id);
-        if (el) el.textContent = val;
+        if (el) el.textContent = val != null ? String(val) : '--';
     });
-    
+
+    const gp = m.gross_profit;
+    const gl = m.gross_loss;
     const profitFields = {
-        'adv-gross-profit': `$${m.gross_profit?.toLocaleString()}`,
-        'adv-gross-loss': `$${m.gross_loss?.toLocaleString()}`,
-        'adv-max-win': `$${m.largest_win?.toLocaleString()}`,
-        'adv-max-loss': `$${m.largest_loss?.toLocaleString()}`,
-        'adv-avg-profit': `$${m.avg_profit_per_trade?.toFixed(2)}`
+        'adv-gross-profit': gp != null ? `$${Number(gp).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : '--',
+        'adv-gross-loss': gl != null ? `$${Number(gl).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : '--',
+        'adv-max-win': m.largest_win != null ? `$${Number(m.largest_win).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : '--',
+        'adv-max-loss': m.largest_loss != null ? `$${Number(m.largest_loss).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : '--',
+        'adv-avg-profit': `$${Number(m.avg_profit_per_trade ?? 0).toFixed(2)}`
     };
     Object.entries(profitFields).forEach(([id, val]) => {
         const el = document.getElementById(id);
         if (el) el.textContent = val;
     });
 
-    // 3. Render Charts
-    renderAnalyticsCharts(report);
+    try {
+        renderAnalyticsCharts(report);
+    } catch (e) {
+        console.error('Analytics charts failed', e);
+    }
+    try {
+        renderDetailedJournal(report.trades || []);
+    } catch (e) {
+        console.error('Trade journal render failed', e);
+    }
 
-    // 4. Populate Detailed Journal
-    renderDetailedJournal(report.trades || []);
-
-    // 5. AI Insights
     const aiAccuracyBadge = document.getElementById('ai-accuracy-badge');
-    if (aiAccuracyBadge && report.ai_stats && report.ai_stats.accuracy_by_confidence) {
-        // Find best bucket
-        const buckets = report.ai_stats.accuracy_by_confidence;
+    if (!aiAccuracyBadge) return;
+
+    const ai = report.ai_stats;
+    if (ai && ai.accuracy_by_confidence && typeof ai.accuracy_by_confidence === 'object') {
+        const buckets = ai.accuracy_by_confidence;
         const keys = Object.keys(buckets);
-        const bestKey = keys[keys.length - 1]; // Assume last is highest conf
+        const bestKey = keys[keys.length - 1];
         const accuracy = buckets[bestKey];
-        if (accuracy !== undefined) {
-            aiAccuracyBadge.textContent = `${(accuracy * 100).toFixed(0)}% Accuracy`;
+        if (accuracy !== undefined && Number.isFinite(Number(accuracy))) {
+            aiAccuracyBadge.textContent = `${(Number(accuracy) * 100).toFixed(0)}% Accuracy`;
+            return;
         }
+    }
+    if (ai && ai.status) {
+        aiAccuracyBadge.textContent = String(ai.status);
+    } else {
+        aiAccuracyBadge.textContent = 'No AI trade metadata';
     }
 }
 
 function renderAnalyticsCharts(report) {
     const c = report.charts || {};
-    
-    // Destroy existing charts to prevent memory leaks
+
     Object.values(analyticsCharts).forEach(chart => {
         if (chart && typeof chart.destroy === 'function') chart.destroy();
     });
     analyticsCharts = {};
 
-    // PnL Distribution
-    const pnlDistCtx = document.getElementById('chart-pnl-dist');
-    if (pnlDistCtx && c.pnl_dist) {
+    const legendLight = { labels: { color: '#cbd5e1', boxWidth: 10 } };
+
+    const tryChart = (key, fn) => {
+        try {
+            fn();
+        } catch (e) {
+            console.warn(`Analytics chart "${key}" failed`, e);
+        }
+    };
+
+    tryChart('pnlDist', () => {
+        const pnlDistCtx = document.getElementById('chart-pnl-dist');
+        const clean = sanitizeChartJsCartesianData(c.pnl_dist);
+        if (!pnlDistCtx || !clean || !clean.datasets || !clean.datasets.length) return;
+
+        const fullLabels = clean.labels.map(l => String(l));
+        const shortLabels = fullLabels.map((lab, i) => (lab.length > 16 ? `Bin ${i + 1}` : lab));
+
+        const barDs = {
+            ...clean.datasets[0],
+            label: clean.datasets[0].label || 'Frequency',
+            borderWidth: 1,
+            borderColor: 'rgba(15, 23, 42, 0.75)',
+            borderRadius: 4,
+            borderSkipped: false,
+        };
+
         analyticsCharts.pnlDist = new Chart(pnlDistCtx, {
             type: 'bar',
-            data: c.pnl_dist,
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+            data: { labels: shortLabels, datasets: [barDs] },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            title(items) {
+                                const i = items[0].dataIndex;
+                                return fullLabels[i] != null ? fullLabels[i] : items[0].label;
+                            },
+                            label(ctx) {
+                                const v = ctx.raw;
+                                return ` Count: ${v == null ? '0' : v}`;
+                            },
+                        },
+                    },
+                },
+                scales: {
+                    x: {
+                        ..._chartAxisLight,
+                        ticks: {
+                            ..._chartAxisLight.ticks,
+                            autoSkip: true,
+                            maxRotation: 50,
+                            minRotation: 0,
+                            maxTicksLimit: 14,
+                            font: { size: 10 },
+                        },
+                    },
+                    y: {
+                        ..._chartAxisLight,
+                        beginAtZero: true,
+                        ticks: {
+                            ..._chartAxisLight.ticks,
+                            precision: 0,
+                            callback(v) {
+                                return Number.isFinite(Number(v)) ? String(v) : '';
+                            },
+                        },
+                    },
+                },
+                layout: { padding: { top: 6, right: 6, bottom: 4, left: 4 } },
+            },
         });
-    }
+    });
 
-    // Exit Reasons
-    const exitsCtx = document.getElementById('chart-exits');
-    if (exitsCtx && report.exits && report.exits.exit_reason_counts) {
+    tryChart('exits', () => {
+        const exitsCtx = document.getElementById('chart-exits');
+        if (!exitsCtx || !report.exits || !report.exits.exit_reason_counts) return;
         const exitData = report.exits.exit_reason_counts;
+        const labels = Object.keys(exitData).map(k => {
+            const s = String(k);
+            return s.length > 28 ? `${s.slice(0, 26)}…` : s;
+        });
+        const keys = Object.keys(exitData);
+        const vals = keys.map(k => {
+            const n = Number(exitData[k]);
+            return Number.isFinite(n) ? n : 0;
+        });
+        const sum = vals.reduce((a, b) => a + b, 0);
+        if (sum <= 0) return;
+
+        const palette = ['#3b82f6', '#ef4444', '#22c55e', '#eab308', '#8b5cf6', '#06b6d4', '#f97316', '#a855f7'];
+        const colors = keys.map((_, i) => palette[i % palette.length]);
+
         analyticsCharts.exits = new Chart(exitsCtx, {
             type: 'doughnut',
             data: {
-                labels: Object.keys(exitData),
+                labels,
                 datasets: [{
-                    data: Object.values(exitData),
-                    backgroundColor: ['#3b82f6', '#ef4444', '#22c55e', '#eab308', '#8b5cf6']
-                }]
+                    data: vals,
+                    backgroundColor: colors,
+                    borderColor: 'rgba(15, 23, 42, 0.85)',
+                    borderWidth: 2,
+                    hoverOffset: 6,
+                }],
             },
-            options: { responsive: true, maintainAspectRatio: false }
-        });
-    }
-
-    // Main Equity Chart
-    const equityCtx = document.getElementById('chart-equity-main');
-    if (equityCtx && c.equity_curve) {
-        analyticsCharts.equity = new Chart(equityCtx, {
-            type: 'line',
-            data: c.equity_curve,
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                cutout: '52%',
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        align: 'center',
+                        labels: {
+                            ...legendLight.labels,
+                            font: { size: 11 },
+                            padding: 10,
+                            usePointStyle: true,
+                            pointStyle: 'circle',
+                        },
+                    },
+                    tooltip: {
+                        callbacks: {
+                            title(items) {
+                                return keys[items[0].dataIndex] || items[0].label;
+                            },
+                            label(ctx) {
+                                const n = ctx.raw;
+                                const pct = sum ? ((n / sum) * 100).toFixed(1) : '0';
+                                return ` ${n} (${pct}%)`;
+                            },
+                        },
+                    },
+                },
+                layout: { padding: { top: 4, right: 8, bottom: 4, left: 8 } },
+            },
+        });
+    });
+
+    tryChart('equity', () => {
+        const equityCtx = document.getElementById('chart-equity-main');
+        const clean = sanitizeChartJsCartesianData(c.equity_curve);
+        if (!equityCtx || !clean) return;
+        analyticsCharts.equity = new Chart(equityCtx, {
+            type: 'line',
+            data: clean,
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'top', ...legendLight } },
                 scales: {
-                    x: { ticks: { maxTicksLimit: 10 } },
-                    y: { grid: { color: 'rgba(255,255,255,0.05)' } }
+                    x: { ..._chartAxisLight, ticks: { ..._chartAxisLight.ticks, maxTicksLimit: 12 } },
+                    y: { ..._chartAxisLight }
                 }
             }
         });
-    }
+    });
 
-    // Monthly Bar Chart
-    const monthlyCtx = document.getElementById('chart-monthly');
-    if (monthlyCtx && c.monthly_pnl) {
+    tryChart('monthly', () => {
+        const monthlyCtx = document.getElementById('chart-monthly');
+        const clean = sanitizeChartJsCartesianData(c.monthly_pnl);
+        if (!monthlyCtx || !clean) return;
         analyticsCharts.monthly = new Chart(monthlyCtx, {
             type: 'bar',
-            data: c.monthly_pnl,
-            options: { responsive: true, maintainAspectRatio: false }
-        });
-    }
-    
-    // Drawdown Area Chart
-    const ddCtx = document.getElementById('chart-drawdown-area');
-    if (ddCtx && c.drawdown) {
-        analyticsCharts.drawdown = new Chart(ddCtx, {
-            type: 'line',
-            data: c.drawdown,
+            data: clean,
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                fill: true,
-                scales: { y: { reverse: true } }
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { ..._chartAxisLight, ticks: { ..._chartAxisLight.ticks, maxRotation: 35 } },
+                    y: { ..._chartAxisLight }
+                }
             }
         });
-    }
+    });
+
+    tryChart('drawdown', () => {
+        const ddCtx = document.getElementById('chart-drawdown-area');
+        if (!ddCtx || !c.drawdown) return;
+        const ddRaw = {
+            labels: c.drawdown.labels,
+            datasets: (c.drawdown.datasets || []).map(ds => ({ ...ds, fill: true }))
+        };
+        const clean = sanitizeChartJsCartesianData(ddRaw);
+        if (!clean) return;
+        analyticsCharts.drawdown = new Chart(ddCtx, {
+            type: 'line',
+            data: clean,
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'top', ...legendLight } },
+                scales: {
+                    x: { ..._chartAxisLight, ticks: { ..._chartAxisLight.ticks, maxTicksLimit: 12 } },
+                    y: { ..._chartAxisLight, reverse: true }
+                }
+            }
+        });
+    });
+
+    const ai = report.ai_stats;
+    tryChart('aiBuckets', () => {
+        const ctx = document.getElementById('chart-ai-buckets');
+        if (!ctx || !ai || !ai.accuracy_by_confidence) return;
+        const labels = Object.keys(ai.accuracy_by_confidence);
+        if (!labels.length) return;
+        const vals = Object.values(ai.accuracy_by_confidence).map(v =>
+            (typeof v === 'number' && Number.isFinite(v) ? v * 100 : 0));
+        analyticsCharts.aiBuckets = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [{ label: 'Accuracy %', data: vals, backgroundColor: '#3b82f6' }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { ..._chartAxisLight, ticks: { ..._chartAxisLight.ticks, maxRotation: 35 } },
+                    y: { ..._chartAxisLight, max: 100, beginAtZero: true }
+                }
+            }
+        });
+    });
+
+    tryChart('aiDist', () => {
+        const ctx = document.getElementById('chart-ai-dist');
+        if (!ctx || !ai || !ai.prediction_distribution) return;
+        const dist = ai.prediction_distribution;
+        const dlabels = Object.keys(dist);
+        if (!dlabels.length) return;
+        analyticsCharts.aiDist = new Chart(ctx, {
+            type: 'pie',
+            data: {
+                labels: dlabels,
+                datasets: [{ data: Object.values(dist), backgroundColor: ['#22c55e', '#ef4444', '#eab308', '#3b82f6'] }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'bottom', ...legendLight } }
+            }
+        });
+    });
 }
 
 function renderDetailedJournal(trades) {
     const tbody = document.querySelector('#advanced-journal-table tbody');
     if (!tbody) return;
-    
-    tbody.innerHTML = trades.map((t, i) => `
+
+    tbody.innerHTML = trades.map((t, i) => {
+        const pnlVal = Number(t.pnl);
+        const pnlNum = Number.isFinite(pnlVal) ? pnlVal : 0;
+        const dur = Number(t.duration);
+        const hours = Number.isFinite(dur) ? dur / 3600 : 0;
+        return `
         <tr>
-            <td>#${i+1}</td>
+            <td>#${i + 1}</td>
             <td class="${t.type === 'BUY' ? 'pnl-up' : 'pnl-down'}">${t.type}</td>
-            <td>${t.entry_price.toFixed(2)}</td>
-            <td>${t.exit_price?.toFixed(2) || '--'}</td>
-            <td>${t.size}</td>
-            <td class="${t.pnl >= 0 ? 'pnl-up' : 'pnl-down'}">${t.pnl.toFixed(2)}</td>
-            <td>${(t.duration / 3600).toFixed(1)}h</td>
+            <td>${fmtPrice(t.entry_price)}</td>
+            <td>${t.exit_price != null && t.exit_price !== '' ? fmtPrice(t.exit_price) : '--'}</td>
+            <td>${t.size != null ? t.size : '--'}</td>
+            <td class="${pnlNum >= 0 ? 'pnl-up' : 'pnl-down'}">${fmtPnl(t.pnl)}</td>
+            <td>${hours.toFixed(1)}h</td>
             <td>${t.reason || 'Signal'}</td>
-            <td>${t.ai_metadata?.confidence ? t.ai_metadata.confidence + '%' : '--'}</td>
-        </tr>
-    `).join('');
+            <td>${t.ai_metadata && t.ai_metadata.confidence != null ? t.ai_metadata.confidence + '%' : '--'}</td>
+        </tr>`;
+    }).join('');
 }
 
 async function exportActiveReport(format) {
