@@ -49,6 +49,20 @@ class FeaturePipeline:
         true_range = np.max(ranges, axis=1)
         df['atr'] = true_range.rolling(14).mean()
         
+        # Advanced Features (BTCPREDICT Upgrade)
+        df['returns_1d'] = df['close'].pct_change(periods=24) # Assuming 1h tf, roughly 1d
+        df['returns_7d'] = df['close'].pct_change(periods=24*7)
+        
+        df['rolling_volatility'] = df['returns'].rolling(window=24).std()
+        df['momentum_strength'] = df['close'].diff(14) / df['close'].shift(14)
+        
+        # Regime features (simple)
+        df['bull_regime'] = (df['close'] > df['ma99']).astype(int)
+        
+        # Sequence-based features
+        df['lag_1'] = df['close'].shift(1)
+        df['lag_2'] = df['close'].shift(2)
+        
         return df
 
     def get_features_for_prediction(self, multi_tf_data: Dict[str, pd.DataFrame]) -> pd.DataFrame:

@@ -8,6 +8,11 @@ let lastBacktestReport = null;
 let activePriceLines = [];
 let insightsInitialLoad = false;
 let analyticsCharts = {}; // To store Chart.js instances
+let currentLiveCandle = null;
+let lastMainCandle = null;
+let lastLiveHistoryRefreshAt = 0;
+let liveHistoryRefreshInFlight = false;
+let liveFallbackTimer = null;
 
 document.addEventListener('DOMContentLoaded', () => {
     initChart();
@@ -17,6 +22,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initWebSocket();
     setupEventListeners();
     fetchInitialData();
+    syncLiveStatus();
 });
 
 function initChart() {
@@ -124,9 +130,26 @@ async function loadWallet() {
 
         const availBalance = document.getElementById('wallet-available-balance');
         if (availBalance) availBalance.textContent = availTxt;
+
+        updateWalletMetric('wallet-used-margin', data.used_margin);
+        updateWalletMetric('wallet-total-equity', data.total_equity);
+        updateWalletMetric('wallet-unrealized-pnl', data.unrealized_pnl, true);
+        updateWalletMetric('wallet-realized-pnl', data.realized_pnl, true);
     } catch (err) {
         console.error("Error loading wallet:", err);
     }
+}
+
+function updateWalletMetric(id, value, signed = false) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const n = Number(value);
+    if (!Number.isFinite(n)) {
+        el.textContent = '--';
+        return;
+    }
+    el.textContent = signed && n > 0 ? `+${n.toFixed(2)}` : n.toFixed(2);
+    if (signed) el.className = n >= 0 ? 'pnl-up' : 'pnl-down';
 }
 
 async function loadWalletHistory() {
@@ -182,7 +205,10 @@ async function loadReports() {
                     <td>${wrStr}</td>
                     <td>${r.total_trades != null ? r.total_trades : '--'}</td>
                     <td>${r.max_drawdown != null ? r.max_drawdown : '--'}</td>
-                    <td><button class="btn btn-secondary" onclick="viewReportDetails(${r.id})">Open</button></td>
+                    <td class="report-actions">
+                        <button class="btn btn-secondary" onclick="viewReportDetails(${r.id})">Open</button>
+                        <button class="btn btn-danger" onclick="deleteSavedReport(${r.id})">Delete</button>
+                    </td>
                 `;
                 tbody.appendChild(row);
             });
@@ -198,19 +224,61 @@ async function loadReports() {
     }
 }
 
+function openAnalyticsReport(report) {
+    lastBacktestReport = report;
+    displayReport(report);
+    switchView('analytics');
+}
+
 async function viewReportDetails(reportId) {
     try {
         const res = await fetch(`/api/reports/${reportId}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const report = await res.json();
         try {
-            displayReport(report);
+            report.id = report.id || reportId;
+            openAnalyticsReport(report);
         } catch (e) {
-            console.error('displayReport', e);
-            alert('Report loaded but summary display failed: ' + (e.message || e));
+            console.error('openAnalyticsReport', e);
+            alert('Report loaded but analytics display failed: ' + (e.message || e));
         }
-        switchView('dashboard');
     } catch (err) {
         alert("Failed to load report details");
+    }
+}
+
+async function loadLatestSavedReport() {
+    try {
+        const listRes = await fetch('/api/reports');
+        if (!listRes.ok) throw new Error(`HTTP ${listRes.status}`);
+        const reports = await listRes.json();
+        if (!Array.isArray(reports) || !reports.length) return false;
+
+        const latestId = reports[0].id;
+        const reportRes = await fetch(`/api/reports/${latestId}`);
+        if (!reportRes.ok) throw new Error(`HTTP ${reportRes.status}`);
+        const report = await reportRes.json();
+        report.id = report.id || latestId;
+        lastBacktestReport = report;
+        return true;
+    } catch (err) {
+        console.error('Failed to load latest saved report', err);
+        return false;
+    }
+}
+
+async function deleteSavedReport(reportId) {
+    if (!confirm('Delete this saved report?')) return;
+    try {
+        const res = await fetch(`/api/reports/${reportId}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (lastBacktestReport && Number(lastBacktestReport.id) === Number(reportId)) {
+            lastBacktestReport = null;
+        }
+        loadReports();
+    } catch (err) {
+        console.error('Failed to delete report', err);
+        alert('Failed to delete report');
     }
 }
 
@@ -227,12 +295,103 @@ function initWebSocket() {
                 renderActiveTrades(msg.active_trades);
                 updateChartMarkers(msg.active_trades);
             }
+            if (msg.wallet) {
+                updateWalletMetric('wallet-used-margin', msg.wallet.used_margin);
+                updateWalletMetric('wallet-total-equity', msg.wallet.total_equity);
+                updateWalletMetric('wallet-unrealized-pnl', msg.wallet.unrealized_pnl, true);
+                updateWalletMetric('wallet-realized-pnl', msg.wallet.realized_pnl, true);
+                const wb = document.getElementById('wallet-balance');
+                if (wb && Number.isFinite(Number(msg.wallet.balance))) wb.textContent = Number(msg.wallet.balance).toFixed(2);
+                const av = document.getElementById('wallet-available-balance');
+                if (av && Number.isFinite(Number(msg.wallet.available_balance))) av.textContent = Number(msg.wallet.available_balance).toFixed(2);
+            }
+            if (msg.live_status) {
+                applyLiveStatus(msg.live_status);
+            }
         }
     };
 
     ws.onclose = () => {
+        startLiveFallbackPolling();
         setTimeout(initWebSocket, 5000); // Reconnect
     };
+
+    ws.onopen = () => {
+        stopLiveFallbackPolling();
+        syncLiveStatus();
+    };
+
+    ws.onerror = () => {
+        startLiveFallbackPolling();
+    };
+}
+
+function startLiveFallbackPolling() {
+    if (liveFallbackTimer) return;
+    liveFallbackTimer = setInterval(refreshLivePanels, 2000);
+}
+
+function stopLiveFallbackPolling() {
+    if (!liveFallbackTimer) return;
+    clearInterval(liveFallbackTimer);
+    liveFallbackTimer = null;
+}
+
+async function refreshLivePanels() {
+    try {
+        const [activeRes, walletRes, statusRes] = await Promise.all([
+            fetch('/api/trade/active'),
+            fetch('/api/wallet'),
+            fetch('/api/live/status')
+        ]);
+        if (activeRes.ok) renderActiveTrades(await activeRes.json());
+        if (walletRes.ok) {
+            const wallet = await walletRes.json();
+            updateWalletMetric('wallet-used-margin', wallet.used_margin);
+            updateWalletMetric('wallet-total-equity', wallet.total_equity);
+            updateWalletMetric('wallet-unrealized-pnl', wallet.unrealized_pnl, true);
+            updateWalletMetric('wallet-realized-pnl', wallet.realized_pnl, true);
+            const wb = document.getElementById('wallet-balance');
+            if (wb && Number.isFinite(Number(wallet.balance))) wb.textContent = Number(wallet.balance).toFixed(2);
+            const av = document.getElementById('wallet-available-balance');
+            if (av && Number.isFinite(Number(wallet.available_balance))) av.textContent = Number(wallet.available_balance).toFixed(2);
+        }
+        if (statusRes.ok) applyLiveStatus(await statusRes.json());
+    } catch (err) {
+        console.warn('Live fallback refresh failed', err);
+    }
+}
+
+async function syncLiveStatus() {
+    try {
+        const res = await fetch('/api/live/status');
+        if (res.ok) applyLiveStatus(await res.json());
+    } catch (err) {
+        console.warn('Live status sync failed', err);
+    }
+}
+
+function applyLiveStatus(status) {
+    if (!status) return;
+    isLive = Boolean(status.active);
+    const startBtn = document.getElementById('start-live');
+    const stopBtn = document.getElementById('stop-live');
+    const pulse = document.getElementById('live-pulse');
+    const dot = document.getElementById('live-status-dot');
+    const text = document.getElementById('live-status-text');
+
+    if (startBtn) startBtn.classList.toggle('hidden', isLive);
+    if (stopBtn) stopBtn.classList.toggle('hidden', !isLive);
+    if (pulse) pulse.classList.toggle('hidden', !isLive);
+    if (dot) {
+        dot.style.background = isLive ? '#ef4444' : '#22c55e';
+        dot.style.boxShadow = isLive ? '0 0 5px #ef4444' : '0 0 5px #22c55e';
+    }
+    if (text && !isLive) {
+        text.textContent = 'System Ready';
+        text.title = '';
+    }
+    if (isLive) updateLiveStatusHint(status);
 }
 
 function updateTickerUI(msg) {
@@ -260,17 +419,8 @@ function updateTickerUI(msg) {
     // Update chart if live
     if (isLive && candleSeries) {
         try {
-            const resMap = {"5m": 300, "15m": 900, "1h": 3600};
-            const resolutionSeconds = resMap[currentResolution] || 3600; 
-            const candleTime = Math.floor(Date.now() / 1000 / resolutionSeconds) * resolutionSeconds;
-            
-            candleSeries.update({
-                time: candleTime,
-                open: lastPrice,
-                high: lastPrice,
-                low: lastPrice,
-                close: lastPrice
-            });
+            refreshLiveHistory(lastPrice);
+            updateMainLiveCandle(lastPrice);
         } catch (e) {
             console.error("Chart update error:", e);
         }
@@ -281,10 +431,89 @@ function updateTickerUI(msg) {
     }
 }
 
+function getResolutionSeconds() {
+    const resMap = {"5m": 300, "15m": 900, "1h": 3600};
+    return resMap[currentResolution] || 3600;
+}
+
+function updateMainLiveCandle(lastPrice) {
+    const resolutionSeconds = getResolutionSeconds();
+    const candleTime = Math.floor(Date.now() / 1000 / resolutionSeconds) * resolutionSeconds;
+
+    if (lastMainCandle && candleTime < Number(lastMainCandle.time)) return;
+
+    if (!currentLiveCandle || currentLiveCandle.time !== candleTime) {
+        if (currentLiveCandle) {
+            lastMainCandle = { ...currentLiveCandle };
+        }
+
+        const existingCandle = lastMainCandle && lastMainCandle.time === candleTime ? lastMainCandle : null;
+        if (existingCandle) {
+            currentLiveCandle = { ...existingCandle };
+        } else {
+            const open = lastMainCandle && Number.isFinite(Number(lastMainCandle.close)) ? Number(lastMainCandle.close) : lastPrice;
+            currentLiveCandle = {
+                time: candleTime,
+                open,
+                high: Math.max(open, lastPrice),
+                low: Math.min(open, lastPrice),
+                close: lastPrice,
+            };
+        }
+    }
+
+    currentLiveCandle.high = Math.max(Number(currentLiveCandle.high), lastPrice);
+    currentLiveCandle.low = Math.min(Number(currentLiveCandle.low), lastPrice);
+    currentLiveCandle.close = lastPrice;
+
+    candleSeries.update(currentLiveCandle);
+    lastMainCandle = { ...currentLiveCandle };
+}
+
+function normalizeHistoryCandles(rawData) {
+    return (Array.isArray(rawData) ? rawData : []).filter(d =>
+        d.time && isFinite(d.time) &&
+        isFinite(d.open) && isFinite(d.high) &&
+        isFinite(d.low) && isFinite(d.close)
+    ).sort((a, b) => a.time - b.time);
+}
+
+async function refreshLiveHistory(lastPrice, force = false) {
+    const now = Date.now();
+    if (!force && now - lastLiveHistoryRefreshAt < 15000) return;
+    if (liveHistoryRefreshInFlight) return;
+
+    liveHistoryRefreshInFlight = true;
+    try {
+        const res = await fetch(`/api/history?symbol=BTCUSD&resolution=${currentResolution}`);
+        const rawData = await res.json();
+        const cleanData = normalizeHistoryCandles(rawData);
+        if (!cleanData.length) return;
+
+        candleSeries.setData(cleanData);
+        lastMainCandle = { ...cleanData[cleanData.length - 1] };
+        currentLiveCandle = null;
+        lastLiveHistoryRefreshAt = now;
+
+        if (Number.isFinite(Number(lastPrice)) && lastPrice > 0) {
+            updateMainLiveCandle(lastPrice);
+        }
+    } catch (err) {
+        console.error("Live history refresh failed:", err);
+    } finally {
+        liveHistoryRefreshInFlight = false;
+    }
+}
+
 function handleLiveEvent(event) {
     if (!event || !event.data) return;
     const trade = event.data;
     const type = event.type;
+
+    if (type === 'error') {
+        alert(trade.message || 'Live trade action failed');
+        return;
+    }
     
     const tbody = document.querySelector('#trade-table tbody');
     if (tbody) {
@@ -302,7 +531,7 @@ function handleLiveEvent(event) {
         tbody.prepend(row);
     }
 
-    if (type === 'trade' && candleSeries) {
+    if (['trade', 'trade_opened'].includes(type) && candleSeries) {
         const markerTime = Math.floor(new Date().getTime() / 1000);
         tradeMarkers.push({
             time: markerTime,
@@ -323,14 +552,18 @@ function setupEventListeners() {
     document.getElementById('nav-insights').addEventListener('click', () => switchView('insights'));
     document.getElementById('nav-wallet').addEventListener('click', () => switchView('wallet'));
     document.getElementById('nav-reports').addEventListener('click', () => switchView('reports'));
-    document.getElementById('nav-analytics').addEventListener('click', () => {
+    document.getElementById('nav-analytics').addEventListener('click', async () => {
         if (!lastBacktestReport) {
-            alert("No backtest report available. Please run a backtest first.");
-            return;
+            const loaded = await loadLatestSavedReport();
+            if (!loaded) {
+                alert("No saved backtest report available. Please run and save a backtest first.");
+                return;
+            }
         }
         switchView('analytics');
     });
     document.getElementById('nav-ai').addEventListener('click', () => switchView('ai'));
+    document.getElementById('nav-news')?.addEventListener('click', () => switchView('news'));
     document.getElementById('btn-add-funds').addEventListener('click', () => switchView('wallet'));
 
     // Timeframe selector
@@ -434,7 +667,8 @@ function switchView(view) {
         'reports': document.getElementById('view-reports'),
         'insights': document.getElementById('view-insights'),
         'ai': document.getElementById('view-ai'),
-        'analytics': document.getElementById('view-analytics')
+        'analytics': document.getElementById('view-analytics'),
+        'news': document.getElementById('view-news')
     };
 
     Object.values(views).forEach(v => {
@@ -473,6 +707,8 @@ function switchView(view) {
                 console.error('Analytics view failed', e);
             }
         }
+    } else if (view === 'news') {
+        loadNewsSentiment();
     }
 }
 
@@ -586,7 +822,183 @@ async function loadAIInsights() {
             if (contextEl) contextEl.textContent = ai.market_context || 'Stable';
         }
     } catch (e) {
-        console.error("Error loading AI insights:", e);
+        console.error("Error loading legacy AI insights:", e);
+    }
+    
+    try {
+        console.log("DEBUG: Loading Advanced AI Forecasting...");
+        const advRes = await fetch('/ai/advanced-prediction');
+        if (advRes.ok) {
+            const advData = await advRes.json();
+            console.log("DEBUG: Advanced AI Data received:", advData);
+            
+            const updateForecastCard = (prefix, data) => {
+                const dirEl = document.getElementById(`adv-${prefix}-dir`);
+                const confText = document.getElementById(`adv-${prefix}-conf-text`);
+                const confFill = document.getElementById(`adv-${prefix}-conf-fill`);
+                const lowEl = document.getElementById(`adv-${prefix}-low`);
+                const highEl = document.getElementById(`adv-${prefix}-high`);
+                
+                if (data && dirEl) {
+                    dirEl.textContent = data.prediction;
+                    dirEl.className = `badge ${data.prediction === 'BULLISH' ? 'side-buy' : data.prediction === 'BEARISH' ? 'side-sell' : ''}`;
+                    
+                    const conf = data.confidence || 0;
+                    confText.textContent = `${conf.toFixed(1)}%`;
+                    confFill.style.width = `${conf}%`;
+                    confFill.style.background = data.prediction === 'BULLISH' ? 'var(--success)' : data.prediction === 'BEARISH' ? 'var(--danger)' : 'var(--accent)';
+                    
+                    if (data.range && data.range.length === 2) {
+                        lowEl.textContent = `$${data.range[0].toLocaleString(undefined, {maximumFractionDigits:0})}`;
+                        highEl.textContent = `$${data.range[1].toLocaleString(undefined, {maximumFractionDigits:0})}`;
+                    }
+                }
+            };
+            
+            updateForecastCard('day', advData.next_day);
+            updateForecastCard('week', advData.next_week);
+            updateForecastCard('month', advData.next_month);
+        }
+    } catch (e) {
+        console.error("Error loading advanced AI insights:", e);
+    }
+
+}
+
+async function loadNewsSentiment() {
+    console.log("DEBUG: Loading News Sentiment view data...");
+    
+    // 1. Fetch consolidated sentiment summary
+    try {
+        const res = await fetch('/api/news/sentiment');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        console.log("DEBUG: Sentiment summary received:", data);
+
+        // Update consolidated signal val
+        const signalVal = document.getElementById('news-signal-val');
+        if (signalVal) {
+            signalVal.textContent = data.signal || 'NEUTRAL';
+            
+            // Set styles based on signal value
+            const sig = (data.signal || 'NEUTRAL').toUpperCase();
+            if (sig === 'POSITIVE') {
+                signalVal.style.backgroundColor = 'rgba(34, 197, 94, 0.2)';
+                signalVal.style.color = '#22c55e';
+                signalVal.style.borderColor = '#22c55e';
+            } else if (sig === 'NEGATIVE') {
+                signalVal.style.backgroundColor = 'rgba(239, 68, 68, 0.2)';
+                signalVal.style.color = '#ef4444';
+                signalVal.style.borderColor = '#ef4444';
+            } else {
+                signalVal.style.backgroundColor = 'rgba(148, 163, 184, 0.2)';
+                signalVal.style.color = '#94a3b8';
+                signalVal.style.borderColor = '#94a3b8';
+            }
+        }
+
+        // Update confidence text
+        const signalConf = document.getElementById('news-signal-conf');
+        if (signalConf) {
+            signalConf.textContent = `Confidence: ${(data.confidence || 0).toFixed(0)}%`;
+        }
+
+        // Update counts
+        const posCount = document.getElementById('news-pos-count');
+        if (posCount) posCount.textContent = data.positive_news ?? '--';
+
+        const neuCount = document.getElementById('news-neu-count');
+        if (neuCount) neuCount.textContent = data.neutral_news ?? '--';
+
+        const negCount = document.getElementById('news-neg-count');
+        if (negCount) negCount.textContent = data.negative_news ?? '--';
+
+    } catch (err) {
+        console.error("Failed to load news sentiment stats:", err);
+    }
+
+    // 2. Fetch latest news articles
+    try {
+        const res = await fetch('/api/news/latest?limit=50');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const articles = await res.json();
+        console.log("DEBUG: Latest articles received:", articles);
+
+        // Update articles count badge
+        const countBadge = document.getElementById('news-articles-count');
+        if (countBadge) {
+            countBadge.textContent = `${articles.length} Articles`;
+        }
+
+        // Populate table body
+        const tbody = document.getElementById('news-table-body');
+        if (tbody) {
+            tbody.innerHTML = '';
+            if (articles.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="padding: 32px; text-align: center; color: var(--text-secondary);">No articles found in the database. Run the news pipeline to fetch articles.</td></tr>';
+            } else {
+                articles.forEach(art => {
+                    const row = document.createElement('tr');
+                    row.style.borderBottom = '1px solid rgba(255, 255, 255, 0.05)';
+                    
+                    // Format date
+                    let dateStr = '--';
+                    if (art.published_at) {
+                        try {
+                            const d = new Date(art.published_at);
+                            dateStr = d.toLocaleString('en-IN', {
+                                timeZone: 'Asia/Kolkata',
+                                day: '2-digit',
+                                month: 'short',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                            });
+                        } catch (e) {
+                            dateStr = art.published_at;
+                        }
+                    }
+
+                    // Format title/url
+                    const titleHtml = art.url 
+                        ? `<a href="${art.url}" target="_blank" style="color: var(--text-primary); text-decoration: none; font-weight: 600; display: block; margin-bottom: 4px; hover: underline;">${art.title}</a>`
+                        : `<span style="color: var(--text-primary); font-weight: 600; display: block; margin-bottom: 4px;">${art.title}</span>`;
+                    
+                    const summaryHtml = art.summary 
+                        ? `<p style="font-size: 12px; color: var(--text-secondary); line-height: 1.4; margin: 0;">${art.summary}</p>`
+                        : '';
+                    
+                    // Sentiment badge styling
+                    const sent = (art.sentiment || 'NEUTRAL').toUpperCase();
+                    let badgeColor = '#94a3b8';
+                    let bgCol = 'rgba(148, 163, 184, 0.1)';
+                    if (sent === 'POSITIVE') {
+                        badgeColor = '#22c55e';
+                        bgCol = 'rgba(34, 197, 94, 0.1)';
+                    } else if (sent === 'NEGATIVE') {
+                        badgeColor = '#ef4444';
+                        bgCol = 'rgba(239, 68, 68, 0.1)';
+                    }
+
+                    const sentimentBadge = `<span style="color: ${badgeColor}; background: ${bgCol}; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 800; border: 1px solid ${badgeColor}40;">${sent}</span>`;
+                    const confVal = art.confidence != null ? `${(art.confidence * 100).toFixed(0)}%` : '--';
+
+                    row.innerHTML = `
+                        <td style="padding: 12px 16px; font-size: 13px; color: var(--text-secondary); vertical-align: top;">${dateStr}</td>
+                        <td style="padding: 12px 16px; vertical-align: top;">
+                            ${titleHtml}
+                            ${summaryHtml}
+                        </td>
+                        <td style="padding: 12px 16px; font-size: 13px; color: var(--text-secondary); vertical-align: top;">${art.source || '--'}</td>
+                        <td style="padding: 12px 16px; vertical-align: top;">${sentimentBadge}</td>
+                        <td style="padding: 12px 16px; font-size: 13px; color: var(--text-secondary); vertical-align: top;">${confVal}</td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            }
+        }
+
+    } catch (err) {
+        console.error("Failed to load news articles feed:", err);
     }
 }
 
@@ -656,6 +1068,27 @@ function fmtPnl(n) {
     return Number.isFinite(x) ? x.toFixed(2) : '--';
 }
 
+function optionalNumberInput(id) {
+    const el = document.getElementById(id);
+    if (!el || el.value === '') return null;
+    const n = Number(el.value);
+    return Number.isFinite(n) ? n : null;
+}
+
+function updateLiveStatusHint(status) {
+    if (!status || !isLive) return;
+    const text = document.getElementById('live-status-text');
+    if (!text) return;
+    if (status.last_error) {
+        text.textContent = `Live: ${status.strategy_name || 'Strategy'} | ${status.last_error}`;
+        text.title = status.last_error;
+        return;
+    }
+    const last = status.last_signal ? ` | Signal: ${status.last_signal}` : '';
+    text.textContent = `Live: ${status.strategy_name || 'Strategy'}${last}`;
+    text.title = status.last_evaluation ? JSON.stringify(status.last_evaluation) : '';
+}
+
 /** Ensure Chart.js line/bar charts get equal-length labels + finite numeric (or null) points. */
 function sanitizeChartJsCartesianData(raw) {
     if (!raw || typeof raw !== 'object') return null;
@@ -672,6 +1105,74 @@ function sanitizeChartJsCartesianData(raw) {
         return { ...ds, data };
     });
     return { ...raw, labels, datasets };
+}
+
+function formatAnalyticsTimeLabel(label) {
+    const d = new Date(label);
+    if (Number.isNaN(d.getTime())) return String(label ?? '');
+    return d.toLocaleDateString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        day: '2-digit',
+        month: 'short',
+    });
+}
+
+function compactAnalyticsSeries(raw, maxPoints = 180) {
+    const clean = sanitizeChartJsCartesianData(raw);
+    if (!clean || !clean.datasets || !clean.datasets.length) return clean;
+
+    const step = Math.max(1, Math.ceil(clean.labels.length / maxPoints));
+    const labels = [];
+    const sourceIndexes = [];
+    for (let i = 0; i < clean.labels.length; i += step) {
+        labels.push(clean.labels[i]);
+        sourceIndexes.push(i);
+    }
+    const lastIndex = clean.labels.length - 1;
+    if (sourceIndexes[sourceIndexes.length - 1] !== lastIndex) {
+        labels.push(clean.labels[lastIndex]);
+        sourceIndexes.push(lastIndex);
+    }
+
+    return {
+        ...clean,
+        labels: labels.map(formatAnalyticsTimeLabel),
+        datasets: clean.datasets.map(ds => ({
+            ...ds,
+            data: sourceIndexes.map(i => ds.data[i]),
+        })),
+    };
+}
+
+function formatPnlBinLabel(label) {
+    const s = String(label ?? '');
+    const match = s.match(/[\(\[]\s*(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)\s*[\)\]]/);
+    if (!match) return s.length > 18 ? s.slice(0, 17) : s;
+
+    const left = Number(match[1]);
+    const right = Number(match[2]);
+    if (!Number.isFinite(left) || !Number.isFinite(right)) return s;
+
+    const fmt = (n) => {
+        const rounded = Math.abs(n) >= 10 ? Math.round(n) : Number(n.toFixed(1));
+        return `${rounded}`;
+    };
+    return `${fmt(left)} to ${fmt(right)}`;
+}
+
+function updateAnalyticsReportMeta(report) {
+    const el = document.getElementById('analytics-report-meta');
+    if (!el) return;
+
+    const params = report.parameters || {};
+    const strategy = report.strategy || params.strategy || report.strategy_name || 'Unknown Strategy';
+    const resolution = params.resolution || report.resolution || currentResolution || 'N/A';
+    const start = params.start_date || report.start_date;
+    const end = params.end_date || report.end_date;
+    const period = start && end ? `${start} to ${end}` : 'Backtest report';
+    const reportId = report.id ? `Report #${report.id}` : 'Unsaved report';
+
+    el.textContent = `${strategy} | ${resolution} | ${period} | ${reportId}`;
 }
 
 /** Normalize API report (legacy flat fields vs current metrics/performance). */
@@ -732,6 +1233,7 @@ function displayReport(report) {
                 <td>${new Date(t.entry_time).toLocaleDateString('en-IN', {timeZone: 'Asia/Kolkata'})}</td>
                 <td>${new Date(t.entry_time).toLocaleTimeString('en-IN', {timeZone: 'Asia/Kolkata', hour12: false})}</td>
                 <td>${t.exit_time ? new Date(t.exit_time).toLocaleTimeString('en-IN', {timeZone: 'Asia/Kolkata', hour12: false}) : '--'}</td>
+                <td>--</td>
             `;
             tbody.prepend(row);
         });
@@ -749,8 +1251,10 @@ async function saveCurrentReport() {
         });
         const data = await res.json();
         if (data.status === 'success') {
+            lastBacktestReport.id = data.report_id;
             alert('Report saved successfully!');
             document.getElementById('save-report-btn').classList.add('hidden');
+            loadReports();
         }
     } catch (err) {
         alert('Failed to save report');
@@ -811,30 +1315,40 @@ async function toggleLive(active) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     strategy_name: strategyName,
-                    lot_size: parseFloat(document.getElementById('live-size').value)
+                    lot_size: parseFloat(document.getElementById('live-size').value),
+                    leverage: optionalNumberInput('live-leverage') || 1,
+                    stop_loss: optionalNumberInput('live-stop-loss'),
+                    take_profit: optionalNumberInput('live-take-profit'),
+                    cooldown_seconds: optionalNumberInput('live-cooldown') || 0
                 })
             });
-            if (!res.ok) throw new Error('API refused to start');
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.error || 'API refused to start');
+            }
+            const data = await res.json().catch(() => ({}));
             
+            await fetchInitialData();
             isLive = true;
+            currentLiveCandle = null;
+            lastLiveHistoryRefreshAt = 0;
             tradeMarkers = [];
             document.querySelector('#trade-table tbody').innerHTML = '';
+            if (data.live) applyLiveStatus(data.live);
         } catch (err) {
+            await syncLiveStatus();
             return alert('Failed to start live test: ' + err.message);
         }
     } else {
         await fetch('/api/live/stop', { method: 'POST' });
-        isLive = false;
+        await syncLiveStatus();
+        currentLiveCandle = null;
+        lastLiveHistoryRefreshAt = 0;
         alert('Live Test Session Ended.');
         fetchInitialData(); 
     }
 
-    document.getElementById('start-live').classList.toggle('hidden', active);
-    document.getElementById('stop-live').classList.toggle('hidden', !active);
-    document.getElementById('live-pulse').classList.toggle('hidden', !active);
-    document.getElementById('live-status-dot').style.background = active ? '#ef4444' : '#22c55e';
-    document.getElementById('live-status-dot').style.boxShadow = active ? '0 0 5px #ef4444' : '0 0 5px #22c55e';
-    document.getElementById('live-status-text').textContent = active ? `Live: ${strategyName}` : 'System Ready';
+    await syncLiveStatus();
 }
 
 async function fetchInitialData() {
@@ -842,14 +1356,12 @@ async function fetchInitialData() {
         const res = await fetch(`/api/history?symbol=BTCUSD&resolution=${currentResolution}`);
         const rawData = await res.json();
         
-        const cleanData = rawData.filter(d => 
-            d.time && isFinite(d.time) &&
-            isFinite(d.open) && isFinite(d.high) && 
-            isFinite(d.low) && isFinite(d.close)
-        ).sort((a, b) => a.time - b.time);
+        const cleanData = normalizeHistoryCandles(rawData);
 
         if (cleanData.length > 0) {
             candleSeries.setData(cleanData);
+            lastMainCandle = { ...cleanData[cleanData.length - 1] };
+            currentLiveCandle = null;
             chart.timeScale().fitContent();
         }
     } catch (err) {
@@ -873,8 +1385,14 @@ function renderActiveTrades(trades) {
     
     container.innerHTML = trades.map(t => {
         const u = Number(t.unrealized_pnl);
+        const pct = Number(t.pnl_percentage);
+        const roi = Number(t.roi);
+        const dur = Number(t.duration);
         const uTxt = Number.isFinite(u) ? `${u >= 0 ? '+' : ''}${u.toFixed(2)}` : '--';
         const uCls = Number.isFinite(u) ? (u >= 0 ? 'pnl-up' : 'pnl-down') : '';
+        const pctTxt = Number.isFinite(pct) ? `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%` : '--';
+        const roiTxt = Number.isFinite(roi) ? `${roi >= 0 ? '+' : ''}${roi.toFixed(2)}%` : '--';
+        const durTxt = Number.isFinite(dur) ? `${Math.floor(dur / 60)}m ${Math.floor(dur % 60)}s` : '--';
         return `
         <div class="trade-card">
             <div class="trade-main">
@@ -885,7 +1403,15 @@ function renderActiveTrades(trades) {
                 </div>
                 <div class="trade-details">
                     <span>Entry: ${fmtPrice(t.entry_price)}</span>
-                    <span>Size: ${t.size != null ? t.size : '--'}</span>
+                    <span>Live: ${fmtPrice(t.current_price)}</span>
+                    <span>Qty: ${t.size != null ? t.size : '--'}</span>
+                    <span>Lev: ${t.leverage || 1}x</span>
+                </div>
+                <div class="trade-details">
+                    <span>Margin: ${fmtPrice(t.margin_used)}</span>
+                    <span>PnL %: ${pctTxt}</span>
+                    <span>ROI: ${roiTxt}</span>
+                    <span>${durTxt}</span>
                 </div>
                 ${t.stop_loss || t.take_profit ? `
                     <div class="trade-details">
@@ -896,9 +1422,36 @@ function renderActiveTrades(trades) {
             </div>
             <div class="pnl-container">
                 <div class="live-pnl ${uCls}">${uTxt}</div>
+                <button class="btn-close-trade" onclick="closeLiveTrade(${Number(t.id)})">Close</button>
             </div>
         </div>`;
     }).join('');
+}
+
+async function closeLiveTrade(tradeId) {
+    if (!tradeId) return;
+    try {
+        const res = await fetch(`/api/trade/${tradeId}/close`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || 'Close failed');
+        loadWallet();
+        loadTradeHistory();
+    } catch (err) {
+        alert('Manual close failed: ' + err.message);
+    }
+}
+
+async function deleteLiveTrade(tradeId) {
+    if (!tradeId) return;
+    if (!confirm('Are you sure you want to delete this trade from history?')) return;
+    try {
+        const res = await fetch(`/api/trade/${tradeId}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || 'Delete failed');
+        loadTradeHistory();
+    } catch (err) {
+        alert('Delete trade failed: ' + err.message);
+    }
 }
 
 async function loadTradeHistory() {
@@ -920,6 +1473,7 @@ async function loadTradeHistory() {
                 <td>${new Date(t.entry_time).toLocaleDateString('en-IN', {timeZone: 'Asia/Kolkata'})}</td>
                 <td>${new Date(t.entry_time).toLocaleTimeString('en-IN', {timeZone: 'Asia/Kolkata', hour12: false})}</td>
                 <td>${t.exit_time ? new Date(t.exit_time).toLocaleTimeString('en-IN', {timeZone: 'Asia/Kolkata', hour12: false}) : '--'}</td>
+                <td><button class="btn btn-danger btn-sm" onclick="deleteLiveTrade(${t.id})" style="padding: 2px 8px; font-size: 11px;">Delete</button></td>
             `;
             tbody.appendChild(row);
         });
@@ -1182,6 +1736,7 @@ function renderDetailedReport(report) {
         return;
     }
     console.log("DEBUG: Rendering Institutional Report", report);
+    updateAnalyticsReportMeta(report);
 
     const perf = report.performance || {};
     const m = report.metrics || {};
@@ -1304,7 +1859,7 @@ function renderAnalyticsCharts(report) {
         if (!pnlDistCtx || !clean || !clean.datasets || !clean.datasets.length) return;
 
         const fullLabels = clean.labels.map(l => String(l));
-        const shortLabels = fullLabels.map((lab, i) => (lab.length > 16 ? `Bin ${i + 1}` : lab));
+        const shortLabels = fullLabels.map(formatPnlBinLabel);
 
         const barDs = {
             ...clean.datasets[0],
@@ -1328,11 +1883,11 @@ function renderAnalyticsCharts(report) {
                         callbacks: {
                             title(items) {
                                 const i = items[0].dataIndex;
-                                return fullLabels[i] != null ? fullLabels[i] : items[0].label;
+                                return `PnL range: ${fullLabels[i] != null ? fullLabels[i] : items[0].label}`;
                             },
                             label(ctx) {
                                 const v = ctx.raw;
-                                return ` Count: ${v == null ? '0' : v}`;
+                                return ` Trades in range: ${v == null ? '0' : v}`;
                             },
                         },
                     },
@@ -1340,18 +1895,32 @@ function renderAnalyticsCharts(report) {
                 scales: {
                     x: {
                         ..._chartAxisLight,
+                        title: {
+                            display: true,
+                            text: 'PnL range per trade (USDT)',
+                            color: '#cbd5e1',
+                            font: { size: 12, weight: '600' },
+                            padding: { top: 8 },
+                        },
                         ticks: {
                             ..._chartAxisLight.ticks,
                             autoSkip: true,
-                            maxRotation: 50,
+                            maxRotation: 0,
                             minRotation: 0,
-                            maxTicksLimit: 14,
+                            maxTicksLimit: 10,
                             font: { size: 10 },
                         },
                     },
                     y: {
                         ..._chartAxisLight,
                         beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Number of trades',
+                            color: '#cbd5e1',
+                            font: { size: 12, weight: '600' },
+                            padding: { bottom: 8 },
+                        },
                         ticks: {
                             ..._chartAxisLight.ticks,
                             precision: 0,
@@ -1433,19 +2002,40 @@ function renderAnalyticsCharts(report) {
 
     tryChart('equity', () => {
         const equityCtx = document.getElementById('chart-equity-main');
-        const clean = sanitizeChartJsCartesianData(c.equity_curve);
+        const clean = compactAnalyticsSeries(c.equity_curve, 220);
         if (!equityCtx || !clean) return;
         analyticsCharts.equity = new Chart(equityCtx, {
             type: 'line',
-            data: clean,
+            data: {
+                labels: clean.labels,
+                datasets: clean.datasets.map(ds => ({
+                    ...ds,
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    pointHoverRadius: 3,
+                    tension: 0.18,
+                })),
+            },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                animation: false,
+                interaction: { mode: 'index', intersect: false },
                 plugins: { legend: { position: 'top', ...legendLight } },
                 scales: {
-                    x: { ..._chartAxisLight, ticks: { ..._chartAxisLight.ticks, maxTicksLimit: 12 } },
-                    y: { ..._chartAxisLight }
-                }
+                    x: {
+                        ..._chartAxisLight,
+                        ticks: {
+                            ..._chartAxisLight.ticks,
+                            autoSkip: true,
+                            maxTicksLimit: 9,
+                            maxRotation: 0,
+                            minRotation: 0,
+                        },
+                    },
+                    y: { ..._chartAxisLight, beginAtZero: false },
+                },
+                elements: { line: { capBezierPoints: true } },
             }
         });
     });
@@ -1460,11 +2050,27 @@ function renderAnalyticsCharts(report) {
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                animation: false,
                 plugins: { legend: { display: false } },
                 scales: {
-                    x: { ..._chartAxisLight, ticks: { ..._chartAxisLight.ticks, maxRotation: 35 } },
-                    y: { ..._chartAxisLight }
-                }
+                    x: {
+                        ..._chartAxisLight,
+                        ticks: {
+                            ..._chartAxisLight.ticks,
+                            autoSkip: true,
+                            maxRotation: 0,
+                            minRotation: 0,
+                        },
+                    },
+                    y: { ..._chartAxisLight, beginAtZero: true },
+                },
+                datasets: {
+                    bar: {
+                        borderRadius: 4,
+                        borderSkipped: false,
+                        maxBarThickness: 52,
+                    },
+                },
             }
         });
     });
@@ -1474,9 +2080,20 @@ function renderAnalyticsCharts(report) {
         if (!ddCtx || !c.drawdown) return;
         const ddRaw = {
             labels: c.drawdown.labels,
-            datasets: (c.drawdown.datasets || []).map(ds => ({ ...ds, fill: true }))
+            datasets: (c.drawdown.datasets || []).map(ds => ({
+                ...ds,
+                data: Array.isArray(ds.data) ? ds.data.map(v => {
+                    const n = Number(v);
+                    return Number.isFinite(n) ? -Math.abs(n) : null;
+                }) : [],
+                fill: true,
+                borderWidth: 2,
+                pointRadius: 0,
+                pointHoverRadius: 3,
+                tension: 0.15,
+            }))
         };
-        const clean = sanitizeChartJsCartesianData(ddRaw);
+        const clean = compactAnalyticsSeries(ddRaw, 220);
         if (!clean) return;
         analyticsCharts.drawdown = new Chart(ddCtx, {
             type: 'line',
@@ -1484,11 +2101,31 @@ function renderAnalyticsCharts(report) {
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                animation: false,
+                interaction: { mode: 'index', intersect: false },
                 plugins: { legend: { position: 'top', ...legendLight } },
                 scales: {
-                    x: { ..._chartAxisLight, ticks: { ..._chartAxisLight.ticks, maxTicksLimit: 12 } },
-                    y: { ..._chartAxisLight, reverse: true }
-                }
+                    x: {
+                        ..._chartAxisLight,
+                        ticks: {
+                            ..._chartAxisLight.ticks,
+                            autoSkip: true,
+                            maxTicksLimit: 9,
+                            maxRotation: 0,
+                            minRotation: 0,
+                        },
+                    },
+                    y: {
+                        ..._chartAxisLight,
+                        beginAtZero: true,
+                        ticks: {
+                            ..._chartAxisLight.ticks,
+                            callback(v) {
+                                return `${Math.abs(Number(v)).toFixed(0)}%`;
+                            },
+                        },
+                    },
+                },
             }
         });
     });

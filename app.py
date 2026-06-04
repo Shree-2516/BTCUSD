@@ -9,7 +9,14 @@ from datetime import datetime, timedelta
 import asyncio
 import json
 from typing import Optional
+from contextlib import asynccontextmanager
+import warnings
 
+warnings.filterwarnings(
+    "ignore",
+    message=r".*If you are loading a serialized model.*",
+    category=UserWarning,
+)
 
 from utils.delta_api import delta_api
 from wallet.manager import wallet_manager
@@ -22,18 +29,46 @@ from insights.manager import insights_manager
 from insights.prediction_engine import prediction_engine
 from insights.layered_engine import layered_prediction_engine
 from livetest.metrics_tracker import metrics_tracker
+from utils.logger import logger
+
+# Import news models so they are registered on Base before init_db
+from NEWS.storage.news_repository import NewsArticle, MarketSentimentModel
+from NEWS.routes.news_routes import news_router
+from NEWS.services.scheduler import news_scheduler_loop
 
 
 # Initialize database
 try:
-    print(f"Connecting to database at {os.getenv('POSTGRES_URL')}")
     init_db()
-    print("Database initialized successfully.")
 except Exception as e:
     print(f"CRITICAL: Database initialization failed: {e}")
     # We continue so the app starts, but functionality will be limited
 
-app = FastAPI(title="BTCUSD Trading Dashboard")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Background tasks for metrics tracking and news sentiment aggregation."""
+    async def metrics_loop():
+        while True:
+            try:
+                ticker = delta_api.get_ticker("BTCUSD")
+                if ticker:
+                    metrics_tracker.update_metrics(float(ticker['mark_price']))
+            except Exception as e:
+                print(f"Metrics Loop Error: {e}")
+            await asyncio.sleep(60)
+
+    metrics_task = asyncio.create_task(metrics_loop())
+    news_task = asyncio.create_task(news_scheduler_loop())
+    try:
+        yield
+    finally:
+        metrics_task.cancel()
+        news_task.cancel()
+
+app = FastAPI(title="BTCUSD Trading Dashboard", lifespan=lifespan)
+
+# Register news routes
+app.include_router(news_router)
 
 # Ensure static folder exists
 os.makedirs("static", exist_ok=True)
@@ -64,16 +99,31 @@ class BacktestRequest(BaseModel):
 async def get_dashboard():
     return FileResponse("static/index.html")
 
+def iter_strategy_modules():
+    for file in os.listdir("strategies"):
+        if not file.endswith(".py") or file == "base_strategy.py" or file.startswith("_"):
+            continue
+        yield file, importlib.import_module(f"strategies.{file[:-3]}")
+
+def find_strategy_class(strategy_name: str):
+    for _, module in iter_strategy_modules():
+        for _, obj in inspect.getmembers(module):
+            if (
+                inspect.isclass(obj)
+                and issubclass(obj, BaseStrategy)
+                and obj is not BaseStrategy
+                and obj.__name__ == strategy_name
+            ):
+                return obj
+    return None
+
 @app.get("/api/strategies")
 async def list_strategies():
     strategies = []
-    for file in os.listdir("strategies"):
-        if file.endswith(".py") and file != "base_strategy.py":
-            module_name = f"strategies.{file[:-3]}"
-            module = importlib.import_module(module_name)
-            for name, obj in inspect.getmembers(module):
-                if inspect.isclass(obj) and issubclass(obj, BaseStrategy) and obj is not BaseStrategy:
-                    strategies.append({"name": name, "file": file})
+    for file, module in iter_strategy_modules():
+        for name, obj in inspect.getmembers(module):
+            if inspect.isclass(obj) and issubclass(obj, BaseStrategy) and obj is not BaseStrategy:
+                strategies.append({"name": name, "file": file})
     return strategies
 
 @app.get("/api/wallet")
@@ -114,12 +164,23 @@ async def reset_wallet():
 async def list_reports():
     return report_manager.get_reports()
 
+@app.get("/api/live/report")
+async def get_live_report():
+    return report_manager.get_live_report()
+
 @app.get("/api/reports/{report_id}")
 async def get_report(report_id: int):
     report = report_manager.get_report_details(report_id)
     if not report:
         return JSONResponse(status_code=404, content={"error": "Report not found"})
     return report
+
+@app.delete("/api/reports/{report_id}")
+async def delete_report(report_id: int):
+    deleted = report_manager.delete_report(report_id)
+    if not deleted:
+        return JSONResponse(status_code=404, content={"error": "Report not found"})
+    return {"status": "success"}
 
 class SaveReportRequest(BaseModel):
     report_data: dict
@@ -201,14 +262,7 @@ async def get_history(symbol: str = "BTCUSD", resolution: str = "1h"):
 
 @app.post("/api/backtest")
 async def run_backtest(req: BacktestRequest):
-    # Load strategy
-    strategy_class = None
-    for file in os.listdir("strategies"):
-        if file.endswith(".py"):
-            mod = importlib.import_module(f"strategies.{file[:-3]}")
-            if hasattr(mod, req.strategy_name):
-                strategy_class = getattr(mod, req.strategy_name)
-                break
+    strategy_class = find_strategy_class(req.strategy_name)
     
     if not strategy_class:
         return JSONResponse(status_code=400, content={"error": "Strategy not found"})
@@ -231,6 +285,7 @@ async def run_backtest(req: BacktestRequest):
         params = report.setdefault("parameters", {})
         params["start_date"] = req.start_date
         params["end_date"] = req.end_date
+        params["resolution"] = req.resolution
 
     return report
 
@@ -241,6 +296,18 @@ async def get_active_trades():
 @app.get("/api/trade/history")
 async def get_trade_history():
     return trade_manager.get_trade_history()
+
+@app.delete("/api/trade/{trade_id}")
+async def delete_trade(trade_id: int):
+    try:
+        deleted = trade_manager.delete_trade(trade_id)
+        if not deleted:
+            return JSONResponse(status_code=404, content={"error": "Trade not found"})
+        return {"status": "success"}
+    except Exception as e:
+        from utils.logger import logger
+        logger.error(f"Failed to delete trade: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 @app.get("/api/strategies/configs")
@@ -275,28 +342,93 @@ from livetest.manager import live_test_manager
 class LiveRequest(BaseModel):
     strategy_name: str
     lot_size: float
+    leverage: float = 10.0
+    stop_loss: Optional[float] = None
+    take_profit: Optional[float] = None
+    trailing_stop: Optional[float] = None
+    cooldown_seconds: int = 0
+    allow_hedging: bool = False
 
 @app.post("/api/live/start")
 async def start_live(req: LiveRequest):
-    # Load strategy
-    strategy_class = None
-    for file in os.listdir("strategies"):
-        if file.endswith(".py"):
-            mod = importlib.import_module(f"strategies.{file[:-3]}")
-            if hasattr(mod, req.strategy_name):
-                strategy_class = getattr(mod, req.strategy_name)
-                break
+    if live_test_manager.active:
+        return {"status": "Live testing already running", "live": live_test_manager.get_status()}
+
+    strategy_class = find_strategy_class(req.strategy_name)
     
     if not strategy_class:
         return JSONResponse(status_code=400, content={"error": "Strategy not found"})
 
-    await live_test_manager.start(strategy_class())
-    return {"status": "Live testing started"}
+    ticker = delta_api.get_ticker("BTCUSD")
+    current_price = 0.0
+    if ticker:
+        current_price = float(ticker.get("mark_price") or ticker.get("close") or 0)
+    if current_price <= 0:
+        end_ts = int(datetime.now().timestamp())
+        df = delta_api.get_historical_data("BTCUSD", getattr(strategy_class(), "timeframe", "5m"), end_ts - (20 * 300), end_ts)
+        if not df.empty:
+            current_price = float(df.iloc[-1]["close"])
+
+    if current_price <= 0:
+        return JSONResponse(status_code=503, content={"error": "Live BTCUSD price unavailable. Cannot start paper trading safely."})
+
+    wallet = wallet_manager.get_status()
+    leverage = max(float(req.leverage or 1.0), 1.0)
+    required = (current_price * req.lot_size) / leverage
+    if required > wallet.get("available_balance", 0):
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": (
+                    f"Insufficient paper margin. {req.lot_size} BTC at {leverage:g}x needs about "
+                    f"{required:.2f} USDT, available {wallet.get('available_balance', 0):.2f} USDT. "
+                    f"Increase leverage, reduce position size, or add virtual funds."
+                )
+            }
+        )
+
+    await live_test_manager.start(
+        strategy_class(),
+        lot_size=req.lot_size,
+        leverage=req.leverage,
+        stop_loss=req.stop_loss,
+        take_profit=req.take_profit,
+        trailing_stop=req.trailing_stop,
+        cooldown_seconds=req.cooldown_seconds,
+        allow_hedging=req.allow_hedging,
+    )
+    return {"status": "Live testing started", "live": live_test_manager.get_status()}
 
 @app.post("/api/live/stop")
 async def stop_live():
     live_test_manager.stop()
     return {"status": "Live testing stopped"}
+
+@app.get("/api/live/status")
+async def get_live_status():
+    return live_test_manager.get_status()
+
+@app.post("/api/trade/{trade_id}/close")
+async def close_trade_manual(trade_id: int):
+    try:
+        ticker = delta_api.get_ticker("BTCUSD")
+        current_price = float((ticker or {}).get("mark_price") or (ticker or {}).get("close") or 0)
+        if current_price <= 0:
+            return JSONResponse(status_code=503, content={"error": "Live market price unavailable"})
+        pnl = trade_manager.close_trade(trade_id, current_price, "Manual Exit")
+        
+        if live_test_manager.active and live_test_manager.active_trade_id == trade_id:
+            logger.info("Manual close detected for active live trade. Resetting live manager state.")
+            live_test_manager.active_trade_id = None
+            live_test_manager.state = "WAITING"
+            live_test_manager._reset_strategy_position()
+            
+        return {"status": "success", "trade_id": trade_id, "exit_price": current_price, "pnl": pnl}
+    except ValueError as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+    except Exception as e:
+        logger.error(f"Manual close failed: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 @app.get("/api/insights")
 async def get_insights():
@@ -328,6 +460,16 @@ async def get_ai_insights():
         except Exception as e2:
             return {"error": str(e2), "trend": "ERROR", "confidence": 0}
 
+@app.get("/ai/advanced-prediction")
+async def get_advanced_prediction():
+    """Returns structured multi-timeframe AI forecasts"""
+    try:
+        return insights_manager.get_advanced_predictions("BTCUSD")
+    except Exception as e:
+        from utils.logger import logger
+        logger.error(f"Advanced Prediction Error: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
 @app.websocket("/ws/live")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -336,37 +478,21 @@ async def websocket_endpoint(websocket: WebSocket):
             # Send live updates (ticker, active trades, etc.)
             ticker = delta_api.get_ticker("BTCUSD")
             if ticker:
-                # Run live strategy
-                trade_event = await live_test_manager.on_ticker(ticker)
+                # Live strategy execution is owned by LiveTestManager's background loop.
+                trade_event = live_test_manager.consume_event()
                 
                 # Calculate real-time PnL for all active trades
                 active_trades = trade_manager.get_active_trades()
                 current_price = float(ticker['mark_price'])
-                
-                for trade in active_trades:
-                    if trade['type'] == "BUY":
-                        unrealized_pnl = (current_price - trade['entry_price']) * trade['size']
-                    else:
-                        unrealized_pnl = (trade['entry_price'] - current_price) * trade['size']
-                    trade['unrealized_pnl'] = unrealized_pnl
-
-                    # Check TP/SL
-                    if trade['stop_loss']:
-                        if (trade['type'] == 'BUY' and current_price <= trade['stop_loss']) or \
-                           (trade['type'] == 'SELL' and current_price >= trade['stop_loss']):
-                            trade_manager.close_trade(trade['id'], current_price, "Stop Loss")
-                            trade_event = {"type": "trade_closed", "data": {"id": trade['id'], "reason": "Stop Loss"}}
-
-                    if trade['take_profit']:
-                        if (trade['type'] == 'BUY' and current_price >= trade['take_profit']) or \
-                           (trade['type'] == 'SELL' and current_price <= trade['take_profit']):
-                            trade_manager.close_trade(trade['id'], current_price, "Take Profit")
-                            trade_event = {"type": "trade_closed", "data": {"id": trade['id'], "reason": "Take Profit"}}
+                wallet = wallet_manager.get_status()
                 
                 payload = {
                     "type": "ticker",
                     "data": ticker,
-                    "active_trades": active_trades
+                    "active_trades": active_trades,
+                    "wallet": wallet,
+                    "live_state": live_test_manager.state,
+                    "live_status": live_test_manager.get_status()
                 }
                 if trade_event:
                     payload["event"] = trade_event
@@ -377,22 +503,20 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         print("Client disconnected")
 
-@app.on_event("startup")
-async def startup_event():
-    """Background task for metrics tracking"""
-    async def metrics_loop():
-        while True:
-            try:
-                ticker = delta_api.get_ticker("BTCUSD")
-                if ticker:
-                    metrics_tracker.update_metrics(float(ticker['mark_price']))
-            except Exception as e:
-                print(f"Metrics Loop Error: {e}")
-            await asyncio.sleep(60) # Update metrics every minute
-            
-    asyncio.create_task(metrics_loop())
-
 if __name__ == "__main__":
     import uvicorn
-    # Use reload=True for development so changes to app.py are picked up automatically
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+    reload_enabled = os.getenv("BTCUSD_RELOAD", "").lower() in {"1", "true", "yes"}
+    print("BTCUSD Dashboard running at http://localhost:8000")
+    if reload_enabled:
+        print("Auto-reload enabled")
+    try:
+        uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=reload_enabled, log_level="warning")
+    except Exception as e:
+        if "10048" in str(e) or "already in use" in str(e):
+            print("\n" + "="*60)
+            print("CRITICAL ERROR: Port 8000 is already in use!")
+            print("Another instance of the BTCUSD Dashboard is likely running.")
+            print("Please close it before starting a new one.")
+            print("="*60 + "\n")
+        else:
+            raise

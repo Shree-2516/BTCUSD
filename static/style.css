@@ -286,6 +286,17 @@ input:focus, select:focus {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
+.report-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.report-actions .btn {
+    padding: 10px 14px;
+}
+
 .hidden { display: none !important; }
 
 /* Stats */
@@ -628,6 +639,33 @@ tr:hover {
     font-style: italic;
     background: rgba(0, 0, 0, 0.1);
     border-radius: 8px;
+}
+
+.wallet-live-metrics {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin: 16px 0;
+}
+
+.wallet-live-metrics div {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    padding: 10px;
+}
+
+.wallet-live-metrics label {
+    display: block;
+    color: var(--text-secondary);
+    font-size: 11px;
+    margin-bottom: 4px;
+}
+
+.wallet-live-metrics span {
+    font-family: 'Outfit';
+    font-size: 16px;
+    font-weight: 700;
 }
 
 .trade-buttons button {
@@ -1033,6 +1071,13 @@ tr:hover {
     gap: 16px;
 }
 
+.analytics-report-meta {
+    margin-top: 6px;
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 600;
+}
+
 .analytics-dashboard .export-group {
     display: flex;
     gap: 10px;
@@ -1168,6 +1213,28 @@ tr:hover {
     min-height: 200px;
 }
 
+#analytics-tab-equity .chart-box {
+    min-height: 0;
+    overflow: hidden;
+}
+
+#analytics-tab-equity > .chart-box {
+    height: 500px;
+}
+
+#analytics-tab-equity .chart-section .chart-box {
+    height: 340px;
+}
+
+#analytics-tab-equity .chart-box canvas {
+    display: block;
+    flex: 1 1 auto;
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 0 !important;
+    max-height: 100%;
+}
+
 .metric-grid-3 {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -1219,4 +1286,71 @@ tr:hover {
     display: flex;
     flex-direction: column;
     gap: 20px;
+}
+
+/* Advanced Forecast Cards */
+.forecast-card {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 20px;
+    border-top: 4px solid transparent;
+    transition: all 0.3s ease;
+}
+.forecast-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+.forecast-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.forecast-header h4 {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+.forecast-conf {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.forecast-conf label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+.conf-bar {
+    height: 8px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 4px;
+    overflow: hidden;
+}
+.conf-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--accent);
+    transition: width 1s ease-in-out, background 0.5s ease;
+}
+.forecast-range {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: rgba(0,0,0,0.2);
+    padding: 12px;
+    border-radius: 8px;
+}
+.forecast-range label {
+    font-size: 11px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+}
+.range-vals {
+    display: flex;
+    justify-content: space-between;
+    font-weight: 700;
+    font-family: 'Outfit';
+    font-size: 14px;
 }

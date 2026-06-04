@@ -204,6 +204,7 @@ class BacktestEngine:
         parameters = {
             "strategy": self.current_strategy.name if self.current_strategy else "Unknown",
             "initial_capital": self.initial_capital,
+            "resolution": getattr(self.current_strategy, "timeframe", None),
         }
 
         report = {
@@ -230,5 +231,3 @@ class BacktestEngine:
             json.dump(report, f, indent=4)
             
         return report
-
-

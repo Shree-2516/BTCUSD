@@ -29,6 +29,7 @@
                 <div class="nav-item" id="nav-reports">Reports</div>
                 <div class="nav-item" id="nav-analytics">Analytics</div>
                 <div class="nav-item" id="nav-ai">AI Predictions</div>
+                <div class="nav-item" id="nav-news">News Sentiment</div>
             </nav>
 
             <div class="wallet-mini">
@@ -102,6 +103,26 @@
                             <div class="form-group">
                                 <label>Position Size</label>
                                 <input type="number" id="live-size" value="0.1" step="0.1">
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Leverage</label>
+                                    <input type="number" id="live-leverage" value="10" min="1" step="1">
+                                </div>
+                                <div class="form-group">
+                                    <label>Cooldown (sec)</label>
+                                    <input type="number" id="live-cooldown" value="0" min="0" step="1">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Stop Loss</label>
+                                    <input type="number" id="live-stop-loss" placeholder="Optional" step="0.01">
+                                </div>
+                                <div class="form-group">
+                                    <label>Take Profit</label>
+                                    <input type="number" id="live-take-profit" placeholder="Optional" step="0.01">
+                                </div>
                             </div>
                             <button class="btn btn-success w-full" id="start-live">Start Live Test</button>
                             <button class="btn btn-danger w-full hidden" id="stop-live">Stop Live Test</button>
@@ -181,6 +202,12 @@
                                 <label>Available to Trade</label>
                                 <div class="big-balance" style="font-size: 32px; margin-top: 0;"><span
                                         id="wallet-available-balance">0.00</span> <small>USDT</small></div>
+                            </div>
+                            <div class="wallet-live-metrics">
+                                <div><label>Used Margin</label><span id="wallet-used-margin">0.00</span></div>
+                                <div><label>Total Equity</label><span id="wallet-total-equity">0.00</span></div>
+                                <div><label>Unrealized PnL</label><span id="wallet-unrealized-pnl">0.00</span></div>
+                                <div><label>Realized PnL</label><span id="wallet-realized-pnl">0.00</span></div>
                             </div>
                             <div class="wallet-actions-grid">
                                 <div class="form-group">
@@ -269,6 +296,7 @@
                                     <th>Date</th>
                                     <th>Entry Time</th>
                                     <th>Exit Time</th>
+                                    <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -414,7 +442,10 @@
             <div id="view-analytics" class="hidden w-full">
                 <div class="analytics-dashboard">
                     <div class="section-header">
-                        <h2>Institutional Backtest Analytics</h2>
+                        <div>
+                            <h2>Institutional Backtest Analytics</h2>
+                            <div class="analytics-report-meta" id="analytics-report-meta">No report loaded</div>
+                        </div>
                         <div class="export-group">
                             <button class="btn btn-secondary" id="btn-export-csv">Export CSV</button>
                             <button class="btn btn-secondary" id="btn-export-excel">Export Excel</button>
@@ -686,6 +717,131 @@
                             </div>
                         </div>
                     </div>
+                    
+                    <h3 style="margin-top: 32px; margin-bottom: 16px; font-family: 'Outfit';">ADVANCED FORECASTING</h3>
+                    <div class="ai-forecast-row" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px;">
+                        <!-- Next Day -->
+                        <div class="card glass forecast-card">
+                            <div class="forecast-header">
+                                <h4>Next Day</h4>
+                                <span id="adv-day-dir" class="badge">--</span>
+                            </div>
+                            <div class="forecast-conf">
+                                <label>Confidence <span id="adv-day-conf-text">0%</span></label>
+                                <div class="conf-bar"><div id="adv-day-conf-fill" class="conf-fill"></div></div>
+                            </div>
+                            <div class="forecast-range">
+                                <label>Expected Range</label>
+                                <div class="range-vals">
+                                    <span id="adv-day-low">$--</span>
+                                    <span>-</span>
+                                    <span id="adv-day-high">$--</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Next Week -->
+                        <div class="card glass forecast-card">
+                            <div class="forecast-header">
+                                <h4>Next Week</h4>
+                                <span id="adv-week-dir" class="badge">--</span>
+                            </div>
+                            <div class="forecast-conf">
+                                <label>Confidence <span id="adv-week-conf-text">0%</span></label>
+                                <div class="conf-bar"><div id="adv-week-conf-fill" class="conf-fill"></div></div>
+                            </div>
+                            <div class="forecast-range">
+                                <label>Expected Range</label>
+                                <div class="range-vals">
+                                    <span id="adv-week-low">$--</span>
+                                    <span>-</span>
+                                    <span id="adv-week-high">$--</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Next Month -->
+                        <div class="card glass forecast-card">
+                            <div class="forecast-header">
+                                <h4>Next Month</h4>
+                                <span id="adv-month-dir" class="badge">--</span>
+                            </div>
+                            <div class="forecast-conf">
+                                <label>Confidence <span id="adv-month-conf-text">0%</span></label>
+                                <div class="conf-bar"><div id="adv-month-conf-fill" class="conf-fill"></div></div>
+                            </div>
+                            <div class="forecast-range">
+                                <label>Expected Range</label>
+                                <div class="range-vals">
+                                    <span id="adv-month-low">$--</span>
+                                    <span>-</span>
+                                    <span id="adv-month-high">$--</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- News View -->
+            <div id="view-news" class="hidden w-full">
+                <div class="news-container" style="padding: 24px;">
+                    <!-- Header Row showing Latest Market Signal -->
+                    <div class="insights-header-row" style="margin-bottom: 24px; display: flex; gap: 24px; flex-wrap: wrap;">
+                        <div class="card glass news-signal-card" style="padding: 24px; display: flex; flex-direction: column; gap: 12px; min-width: 320px; flex: 1;">
+                            <h3>NEWS SENTIMENT SIGNAL</h3>
+                            <div class="sentiment-indicator" style="display: flex; align-items: center; gap: 16px; margin-top: 8px;">
+                                <div class="signal-badge" id="news-signal-val" style="font-size: 24px; font-weight: 800; padding: 10px 20px; border-radius: 8px; text-transform: uppercase; background-color: rgba(148, 163, 184, 0.2); color: #94a3b8; border: 1px solid #94a3b8; width: fit-content;">NEUTRAL</div>
+                                <div style="display: flex; flex-direction: column; gap: 4px;">
+                                    <span id="news-signal-conf" style="font-size: 18px; font-weight: 700;">Confidence: --%</span>
+                                    <span style="font-size: 12px; color: var(--text-secondary);">Aggregate BTC sentiment</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card glass news-stats-card" style="padding: 24px; flex: 2; min-width: 400px;">
+                            <h3>Article Sentiment Breakdown</h3>
+                            <div class="news-metrics-grid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 16px;">
+                                <div class="metric-item card glass" style="padding: 16px; display: flex; flex-direction: column; align-items: center; background: rgba(255, 255, 255, 0.02);">
+                                    <label style="color: #22c55e; font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">Positive News</label>
+                                    <span id="news-pos-count" style="font-size: 28px; font-weight: 700; margin-top: 8px; color: #22c55e;">--</span>
+                                </div>
+                                <div class="metric-item card glass" style="padding: 16px; display: flex; flex-direction: column; align-items: center; background: rgba(255, 255, 255, 0.02);">
+                                    <label style="color: #94a3b8; font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">Neutral News</label>
+                                    <span id="news-neu-count" style="font-size: 28px; font-weight: 700; margin-top: 8px; color: #94a3b8;">--</span>
+                                </div>
+                                <div class="metric-item card glass" style="padding: 16px; display: flex; flex-direction: column; align-items: center; background: rgba(255, 255, 255, 0.02);">
+                                    <label style="color: #ef4444; font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">Negative News</label>
+                                    <span id="news-neg-count" style="font-size: 28px; font-weight: 700; margin-top: 8px; color: #ef4444;">--</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- News Table -->
+                    <section class="card glass news-list-section" style="padding: 24px;">
+                        <div class="section-header" style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+                            <h3 style="font-family: 'Outfit'; font-size: 20px; font-weight: 600;">Latest BTC News & Sentiment</h3>
+                            <span class="badge" id="news-articles-count" style="background: var(--primary); color: white; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600;">0 Articles</span>
+                        </div>
+                        <div class="table-container" style="overflow-x: auto; background: rgba(255, 255, 255, 0.02); border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.05);">
+                            <table id="news-list-table" style="width: 100%; border-collapse: collapse; text-align: left;">
+                                <thead>
+                                    <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.1); background: rgba(0, 0, 0, 0.2);">
+                                        <th style="padding: 16px; font-weight: 600; color: var(--text-secondary); width: 18%;">Published At</th>
+                                        <th style="padding: 16px; font-weight: 600; color: var(--text-secondary); width: 50%;">Article</th>
+                                        <th style="padding: 16px; font-weight: 600; color: var(--text-secondary); width: 14%;">Source</th>
+                                        <th style="padding: 16px; font-weight: 600; color: var(--text-secondary); width: 10%;">Sentiment</th>
+                                        <th style="padding: 16px; font-weight: 600; color: var(--text-secondary); width: 8%;">Conf.</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="news-table-body">
+                                    <tr>
+                                        <td colspan="5" style="padding: 32px; text-align: center; color: var(--text-secondary);">Loading news articles...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
                 </div>
             </div>
         </main>
@@ -695,7 +851,7 @@
         <p>Analyzing BTCUSD Market...</p>
     </div>
 
-    <script src="static/script.js?v=1.0.8"></script>
+    <script src="static/script.js?v=1.0.11"></script>
 </body>
 
 </html>

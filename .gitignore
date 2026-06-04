@@ -1,21 +1,121 @@
-# Environments
+# ====================================================================
+# Environments and Packages
+# ====================================================================
 .venv/
 env/
 venv/
+ENV/
+bin/
+lib/
+include/
+share/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
-# Secrets and Config
+# ====================================================================
+# Secrets, local config, and IDEs
+# ====================================================================
 .env
+.env.local
+.env.*.local
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+pyrightconfig.json
 
-# Python bytecode
+# ====================================================================
+# Python bytecode & cache
+# ====================================================================
+__pycache__/
 **/__pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+htmlcov/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.ruamel_yaml_directory
+.mypy_cache/
+.pyre/
+.pytype/
+cython_debug/
 
-# Data and Reports (Optional: ignore if these contain large/private data)
+# ====================================================================
+# Jupyter Notebooks
+# ====================================================================
+.ipynb_checkpoints
+*/.ipynb_checkpoints/
+
+# ====================================================================
+# Logs and temporary files
+# ====================================================================
+logs/
+*.log
+scratch/
+temp/
+tmp/
+
+# ====================================================================
+# Datasets and Large Binary Models (ML/Data Science)
+# ====================================================================
+*.pkl
+*.joblib
+*.pt
+*.pth
+*.pb
+*.onnx
+*.h5
+*.he5
+# Cache directories for model downloads
+NEWS/models/finbert_cache/
+.huggingface/
+.cache/huggingface/
+
+# ====================================================================
+# Project Specific Ignored Folders
+# ====================================================================
+BTCPREDICT/data/
+BTCPREDICT/models/
+results/
+
+# ====================================================================
+# Data and Reports
+# ====================================================================
 report/backtest_reports/
 report/live_trades/
 wallet/balance.json
 
-# OS files
+# ====================================================================
+# OS and System Files
+# ====================================================================
 .DS_Store
+.DS_Store?
+._*
 Thumbs.db
+desktop.ini
+ehthumbs.db

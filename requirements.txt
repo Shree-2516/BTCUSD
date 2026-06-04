@@ -13,3 +13,8 @@ joblib
 numpy
 xgboost
 scikit-learn
+yfinance
+transformers
+torch
+accelerate
+feedparser

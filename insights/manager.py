@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 import time
 import random
 from utils.delta_api import delta_api
+from insights.advanced_predictor import advanced_predictor
+from insights.prediction_engine import prediction_engine
 
 class InsightsManager:
     def __init__(self):
@@ -135,5 +137,19 @@ class InsightsManager:
                 "time": "Just now"
             })
         return alerts
+
+    def get_advanced_predictions(self, symbol="BTCUSD"):
+        """
+        Combines existing predictions, advanced predictions, regime analysis,
+        and volatility analysis into a single structured response.
+        """
+        # Get existing prediction
+        current_pred = prediction_engine.get_live_prediction(symbol)
+        
+        # Get advanced multi-timeframe predictions
+        adv_pred = advanced_predictor.predict_all(symbol, current_pred)
+        
+        # Return as dict
+        return adv_pred.dict()
 
 insights_manager = InsightsManager()

@@ -25,20 +25,20 @@ class LayeredPredictionEngine:
         try:
             if os.path.exists('models/direction_model.joblib'):
                 self.dir_model = joblib.load('models/direction_model.joblib')
-                logger.info("Loaded legacy direction model.")
+                logger.debug("Loaded legacy direction model.")
             
             if os.path.exists('models/volatility_model.joblib'):
                 self.vol_model = joblib.load('models/volatility_model.joblib')
-                logger.info("Loaded legacy volatility model.")
+                logger.debug("Loaded legacy volatility model.")
                 
             if os.path.exists('models/lightgbm_model.pkl'):
                 # Note: pickle/joblib for lgbm might need lightgbm installed
                 try:
                     import lightgbm
                     self.lgbm_model = joblib.load('models/lightgbm_model.pkl')
-                    logger.info("Loaded legacy LightGBM model.")
+                    logger.debug("Loaded legacy LightGBM model.")
                 except ImportError:
-                    logger.warning("LightGBM not installed, skipping model loading.")
+                    logger.debug("LightGBM not installed, skipping optional model loading.")
         except Exception as e:
             logger.error(f"Error loading legacy models: {e}")
 

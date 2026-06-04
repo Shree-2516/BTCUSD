@@ -17,16 +17,21 @@ class CustomLogger:
 
             # Console Handler
             console_handler = logging.StreamHandler(sys.stdout)
+            console_handler.setLevel(logging.WARNING)
             console_handler.setFormatter(formatter)
             self.logger.addHandler(console_handler)
 
             # File Handler
             os.makedirs("logs", exist_ok=True)
-            file_handler = logging.FileHandler(
-                f"logs/trading_{datetime.now().strftime('%Y%m%d')}.log"
-            )
-            file_handler.setFormatter(formatter)
-            self.logger.addHandler(file_handler)
+            try:
+                file_handler = logging.FileHandler(
+                    f"logs/trading_{datetime.now().strftime('%Y%m%d')}.log"
+                )
+                file_handler.setLevel(logging.INFO)
+                file_handler.setFormatter(formatter)
+                self.logger.addHandler(file_handler)
+            except OSError as exc:
+                self.logger.warning(f"File logging disabled: {exc}")
 
     def get_logger(self):
         return self.logger

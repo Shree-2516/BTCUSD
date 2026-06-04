@@ -1,4 +1,4 @@
-from database.db import SessionLocal, PerformanceMetric, Wallet, Trade
+from database.db import SessionLocal, PerformanceMetric, Wallet, Trade, EquityCurvePoint
 from utils.logger import logger
 from datetime import datetime, timedelta
 import numpy as np
@@ -12,6 +12,8 @@ class MetricsTracker:
         db = SessionLocal()
         try:
             wallet = db.query(Wallet).first()
+            if not wallet:
+                return
             active_trades = db.query(Trade).filter(Trade.status == "OPEN").all()
             
             unrealized_pnl = 0
@@ -21,7 +23,9 @@ class MetricsTracker:
                 else:
                     unrealized_pnl += (trade.entry_price - current_price) * trade.size
             
-            total_balance = wallet.balance + unrealized_pnl
+            wallet.unrealized_pnl = unrealized_pnl
+            wallet.total_equity = wallet.balance + unrealized_pnl
+            total_balance = wallet.total_equity
             
             # Calculate daily return (simplified)
             # In a real system, we'd compare against balance 24h ago
@@ -40,6 +44,14 @@ class MetricsTracker:
                 open_trades_count=len(active_trades)
             )
             db.add(metric)
+            db.add(EquityCurvePoint(
+                balance=wallet.balance,
+                equity=total_balance,
+                available_balance=wallet.available_balance,
+                used_margin=wallet.used_margin or 0.0,
+                unrealized_pnl=unrealized_pnl,
+                realized_pnl=wallet.realized_pnl or 0.0,
+            ))
             db.commit()
             
         except Exception as e:
