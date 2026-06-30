@@ -1,5 +1,5 @@
 # ====================================================================
-# Environments and Packages
+# Environments, Packages, and Node Tooling
 # ====================================================================
 .venv/
 env/
@@ -10,7 +10,6 @@ lib/
 include/
 share/
 develop-eggs/
-dist/
 downloads/
 eggs/
 .eggs/
@@ -24,6 +23,12 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+
+# Frontend subfolder specific exceptions
+frontend/node_modules/
+frontend/dist/
+node_modules/
+dist/
 
 # ====================================================================
 # Secrets, local config, and IDEs
@@ -75,10 +80,13 @@ cython_debug/
 # Logs and temporary files
 # ====================================================================
 logs/
+**/logs/
 *.log
 scratch/
 temp/
 tmp/
+tree*.txt
+
 
 # ====================================================================
 # Datasets and Large Binary Models (ML/Data Science)
@@ -91,24 +99,26 @@ tmp/
 *.onnx
 *.h5
 *.he5
+
+# Data & Model Assets mapped to backend subdirectories
+backend/BTCPREDICT/data/
+backend/BTCPREDICT/models/
+backend/NEWS/models/finbert_cache/
+backend/NEWS/scripts/*.csv
+backend/models/
+backend/results/
+results/
+
 # Cache directories for model downloads
-NEWS/models/finbert_cache/
 .huggingface/
 .cache/huggingface/
 
 # ====================================================================
-# Project Specific Ignored Folders
+# Trading Simulation Data and Generated Reports
 # ====================================================================
-BTCPREDICT/data/
-BTCPREDICT/models/
-results/
-
-# ====================================================================
-# Data and Reports
-# ====================================================================
-report/backtest_reports/
-report/live_trades/
-wallet/balance.json
+backend/report/backtest_reports/
+backend/report/live_trades/
+backend/report/wallet/balance.json
 
 # ====================================================================
 # OS and System Files
